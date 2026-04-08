@@ -1,0 +1,126 @@
+"use client";
+import { useState, useEffect } from "react";
+import AppLayout from "@/components/Layout";
+import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, getHealthColor, useToast, ToastList, EmptyState } from "@/components/ui/shared";
+import type { Department } from "@/lib/types";
+
+const ICONS = ["💼","⚙️","📣","📊","👥","🔧","🎯","⭐","⚖️","🏗️","🌐","💡","🔬","📦","🎨","🧬","🚀","💰","📱","🎓"];
+const COLORS = ["#5b8ef8","#34d399","#a78bfa","#fbbf24","#f87171","#22d3ee","#84cc16","#fb923c","#e879f9","#6366f1"];
+
+const blank = { name:"", head:"", icon:"💼", color:COLORS[0], health:80, memberCount:1 };
+
+export default function DepartmentsPage() {
+  const [depts, setDepts] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<Department | null>(null);
+  const [deleting, setDeleting] = useState<Department | null>(null);
+  const [form, setForm] = useState(blank);
+  const { ts, toast } = useToast();
+
+  const load = () => fetch("/api/departments").then(r => r.json()).then(d => { setDepts(d.data ?? []); setLoading(false); });
+  useEffect(() => { load(); }, []);
+
+  const openAdd = () => { setForm(blank); setShowAdd(true); };
+  const openEdit = (d: Department) => { setEditing(d); setForm({ name:d.name, head:d.head, icon:d.icon, color:d.color, health:d.health, memberCount:d.memberCount }); };
+
+  const save = async () => {
+    if (!form.name || !form.head) return toast("Name and head are required", "er");
+    await fetch("/api/departments", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(form) });
+    await load(); setShowAdd(false); toast(`${form.name} added`);
+  };
+
+  const update = async () => {
+    if (!editing) return;
+    await fetch(`/api/departments/${editing.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify(form) });
+    await load(); setEditing(null); toast("Department updated");
+  };
+
+  const del = async () => {
+    if (!deleting) return;
+    await fetch(`/api/departments/${deleting.id}`, { method:"DELETE" });
+    await load(); toast("Department deleted", "er");
+  };
+
+  const F = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <FormField label={label}>{children}</FormField>
+  );
+
+  const DeptForm = () => (
+    <div>
+      <F label="Department Name"><HubInput value={form.name} onChange={e => setForm(p => ({...p, name:e.target.value}))} placeholder="e.g. Legal, Design…" /></F>
+      <F label="Department Head"><HubInput value={form.head} onChange={e => setForm(p => ({...p, head:e.target.value}))} placeholder="Full name" /></F>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <F label="Members"><HubInput type="number" min="1" value={form.memberCount} onChange={e => setForm(p => ({...p, memberCount:+e.target.value}))} /></F>
+        <F label="Health (%)"><HubInput type="number" min="0" max="100" value={form.health} onChange={e => setForm(p => ({...p, health:+e.target.value}))} /></F>
+      </div>
+      <F label="Icon">
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+          {ICONS.map(ic => <button key={ic} onClick={() => setForm(p => ({...p, icon:ic}))} style={{ width:34, height:34, borderRadius:8, border:`2px solid ${form.icon===ic?"var(--accent)":"var(--border-card)"}`, background:"var(--bg-input)", fontSize:16, cursor:"pointer" }}>{ic}</button>)}
+        </div>
+      </F>
+      <F label="Color">
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          {COLORS.map(c => <button key={c} onClick={() => setForm(p => ({...p, color:c}))} style={{ width:26, height:26, borderRadius:"50%", background:c, cursor:"pointer", border:`3px solid ${form.color===c?"var(--text-primary)":"transparent"}` }} />)}
+        </div>
+      </F>
+    </div>
+  );
+
+  return (
+    <AppLayout title="Departments" onNew={openAdd} newLabel="Add Department">
+      <ToastList ts={ts} />
+      <div style={{ fontSize:12, color:"var(--text-secondary)", marginBottom:14 }}>{depts.length} department{depts.length !== 1 ? "s" : ""}</div>
+
+      {loading ? (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
+          {[0,1,2,3,4,5].map(i => <div key={i} className="skeleton" style={{ height:180, borderRadius:12 }} />)}
+        </div>
+      ) : depts.length === 0 ? (
+        <EmptyState icon="⬡" title="No departments yet" desc="Add your first department to get started." action={<button onClick={openAdd} style={{ padding:"8px 18px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>Add Department</button>} />
+      ) : (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:12 }} className="stagger-children">
+          {depts.map(d => (
+            <Card key={d.id}>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+                <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
+                  <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.head}</div>
+                </div>
+                <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${getHealthColor(d.health)}1a`, color:getHealthColor(d.health) }}>{d.health}%</div>
+              </div>
+              <div style={{ display:"flex", gap:20, marginBottom:10 }}>
+                <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount}</div></div>
+                <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:getHealthColor(d.health) }}>{d.health}%</div></div>
+              </div>
+              <ProgressBar value={d.health} color={getHealthColor(d.health)} />
+              <div style={{ display:"flex", gap:8, marginTop:12 }}>
+                <button onClick={() => openEdit(d)} style={{ flex:1, padding:"6px 12px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Edit</button>
+                <button onClick={() => setDeleting(d)} style={{ padding:"6px 12px", borderRadius:8, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:12, fontWeight:700, cursor:"pointer" }}>Delete</button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Department">
+        <DeptForm />
+        <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
+          <button onClick={() => setShowAdd(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+          <button onClick={save} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Add Department</button>
+        </div>
+      </Modal>
+
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`}>
+        <DeptForm />
+        <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
+          <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+          <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>
+        </div>
+      </Modal>
+
+      <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={del} name={deleting?.name ?? ""} entity="department" />
+    </AppLayout>
+  );
+}
