@@ -61,19 +61,37 @@ export default function MetricsPage() {
   const filterActive = !!(q || deptFilter || typeFilter);
   const dragEnabled = canReorder && !filterActive;
 
-  const handleReorder = async (ids: (string | number)[]) => {
-    // Optimistic: reorder local state to match dropped order
-    const map = new Map(metrics.map(m => [String(m.id), m]));
-    const next = ids.map(id => map.get(String(id))).filter(Boolean) as Metric[];
-    // Preserve any items not in the dragged view (shouldn't happen since dragEnabled
-    // only when filters inactive, but defensive)
-    const used = new Set(ids.map(String));
-    const rest = metrics.filter(m => !used.has(String(m.id)));
-    setMetrics([...next, ...rest]);
+  // Group filtered metrics by department for the assignment-style stacked
+  // card list. The fall-through key "Other" handles metrics with no
+  // department name (shouldn't happen with the schema constraint, but
+  // defensive against legacy rows).
+  const byDept = filtered.reduce<Record<string, Metric[]>>((acc, m) => {
+    const k = m.departmentName ?? "Other";
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(m);
+    return acc;
+  }, {});
+
+  // Reorder metrics within a single department group, then persist the
+  // full global order. Same shape as the assignments page.
+  const handleGroupReorder = async (deptKey: string, newIds: (string | number)[]) => {
+    const reorderedSet = new Set(newIds.map(String));
+    const replacements = newIds
+      .map(id => metrics.find(m => String(m.id) === String(id)))
+      .filter(Boolean) as Metric[];
+    let cursor = 0;
+    const next = metrics.map(m => {
+      if ((m.departmentName ?? "Other") === deptKey && reorderedSet.has(String(m.id))) {
+        return replacements[cursor++];
+      }
+      return m;
+    });
+    setMetrics(next);
+    const allIds = next.map(m => m.id);
     const res = await fetch("/api/metrics/reorder", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
+      body: JSON.stringify({ ids: allIds }),
     });
     if (!res.ok) { toast("Reorder failed", "er"); await load(); }
   };
@@ -228,39 +246,41 @@ export default function MetricsPage() {
         <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>{filtered.length} metrics</span>
       </div>
 
-      {/* Table */}
+      {/* Stacked card list, grouped by department. Mirrors the
+          /assignments layout — each metric is its own hub-card with gap
+          between cards, and each department gets its own group header. */}
       {loading ? (
         <div className="skeleton" style={{ height:400, borderRadius:12 }}/>
       ) : filtered.length === 0 ? (
         <EmptyState icon="📊" title="No metrics found" desc="Try adjusting filters or add your first metric."/>
       ) : (
-        <div className="hub-card" style={{ padding:0, overflow:"hidden" }}>
-          <table className="hub-table">
-            <thead>
-              <tr>{[dragEnabled ? "" : null,"Metric","Department","Type","Current","Target","Progress","Priority",""].filter(h=>h!==null).map((h,i) => <th key={i}>{h}</th>)}</tr>
-            </thead>
-            <Sortable
-              items={filtered}
-              onReorder={handleReorder}
-              strategy="vertical"
-              disabled={!dragEnabled}
-              renderOverlay={m => <MetricRowPreview m={m} />}
-            >
-              <tbody>
-                {filtered.map(m => (
-                  <MetricRow
-                    key={m.id}
-                    m={m}
-                    dragEnabled={dragEnabled}
-                    onView={() => setViewing(m)}
-                    onUpdate={() => setUpdating({ metric:m, value:String(m.currentValue) })}
-                    onEdit={() => openEdit(m)}
-                    onDelete={() => setDeleting(m)}
-                  />
-                ))}
-              </tbody>
-            </Sortable>
-          </table>
+        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+          {Object.entries(byDept).map(([dept, dMetrics]) => (
+            <div key={dept}>
+              <div style={{ fontSize:11, fontWeight:800, color:"var(--text-muted)", letterSpacing:".1em", marginBottom:9, textTransform:"uppercase" }}>{dept}</div>
+              <Sortable
+                items={dMetrics}
+                onReorder={ids => handleGroupReorder(dept, ids)}
+                strategy="vertical"
+                disabled={!dragEnabled}
+                renderOverlay={m => <MetricRowPreview m={m} />}
+              >
+                <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+                  {dMetrics.map(m => (
+                    <MetricRow
+                      key={m.id}
+                      m={m}
+                      dragEnabled={dragEnabled}
+                      onView={() => setViewing(m)}
+                      onUpdate={() => setUpdating({ metric:m, value:String(m.currentValue) })}
+                      onEdit={() => openEdit(m)}
+                      onDelete={() => setDeleting(m)}
+                    />
+                  ))}
+                </div>
+              </Sortable>
+            </div>
+          ))}
         </div>
       )}
 
@@ -305,13 +325,13 @@ function MetricRow({
   const pc = priorityColor(m.priorityScore);
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   const stopPointer = (e: React.PointerEvent) => e.stopPropagation();
-  // The whole row is draggable when reorder is enabled — we spread the
-  // listeners on the <tr> instead of attaching them only to a small grip
-  // button. dnd-kit's 5px activation distance keeps the click-to-view path
-  // working: a real click fires onView, a click + 5px drag starts a reorder.
+  // Whole card is draggable when reorder is enabled. dnd-kit's 5px
+  // activation distance keeps click-to-view working: a click fires
+  // onView, a click + 5px drag starts a reorder.
   return (
-    <tr
+    <div
       ref={dragEnabled ? setNodeRef : undefined}
+      className="hub-card"
       style={{
         ...(dragEnabled ? style : {}),
         cursor: dragEnabled ? "grab" : "pointer",
@@ -321,56 +341,57 @@ function MetricRow({
       {...(dragEnabled ? listeners : {})}
       {...(dragEnabled ? attributes : {})}
     >
-      {dragEnabled && (
-        <td style={{ width: 26, color: "var(--text-muted)", opacity: 0.5 }} aria-hidden>
-          <span style={{ display: "inline-flex" }}>
+      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        {dragEnabled && (
+          <span aria-hidden style={{ color: "var(--text-muted)", opacity: 0.5, display: "inline-flex", flexShrink: 0 }}>
             <GripVertical size={14} />
           </span>
-        </td>
-      )}
-      <td>
-        <div>
-          <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.name}</div>
-          {m.notes && <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>{m.notes.slice(0,40)}</div>}
-        </div>
-      </td>
-      <td>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <div style={{ width:6, height:6, borderRadius:"50%", background:m.departmentColor ?? "var(--accent)" }}/>
-          <span style={{ fontSize:11, color:"var(--text-secondary)" }}>{m.departmentName}</span>
-        </div>
-      </td>
-      <td><span style={{ fontSize:10, padding:"2px 7px", borderRadius:5, background:"var(--bg-input)", color:"var(--text-secondary)", fontWeight:700 }}>{metricTypeLabel(m.metricType)}</span></td>
-      <td>
-        <div>
-          <div style={{ fontSize:13, fontWeight:800, color: isGood ? "var(--success)" : delta !== 0 ? "var(--danger)" : "var(--text-primary)" }}>
-            {formatMetricValue(m.currentValue, m.unit)}
-          </div>
-          {delta !== 0 && <div style={{ fontSize:10, color: isGood ? "var(--success)" : "var(--danger)" }}>{delta > 0 ? "↑" : "↓"} {Math.abs(delta).toLocaleString()}</div>}
-        </div>
-      </td>
-      <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{m.targetValue ? formatMetricValue(m.targetValue, m.unit) : "—"}</td>
-      <td style={{ minWidth:100 }}>
-        {pct !== null ? (
-          <div>
-            <ProgressBar value={pct} color={healthColor(pct)} height={5}/>
-            <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:3 }}>{pct}%</div>
-          </div>
-        ) : <span style={{ color:"var(--text-muted)", fontSize:12 }}>—</span>}
-      </td>
-      <td>
-        <span style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:700, background:`${pc}18`, color:pc }}>
+        )}
+        <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 800, background: `${pc}18`, color: pc, flexShrink: 0 }}>
           {priorityLabel(m.priorityScore)}
         </span>
-      </td>
-      <td onClick={stop} onPointerDown={stopPointer}>
-        <div style={{ display:"flex", gap:5 }}>
-          <button onClick={onUpdate} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:11, cursor:"pointer" }}>Update</button>
-          <button onClick={onEdit} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
-          <button onClick={onDelete} style={{ padding:"4px 7px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontSize: 10, color: "var(--text-muted)" }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: m.departmentColor ?? "var(--accent)" }} />
+            <span>{m.departmentName}</span>
+            <span>·</span>
+            <span style={{ textTransform: "lowercase" }}>{metricTypeLabel(m.metricType)}</span>
+          </div>
         </div>
-      </td>
-    </tr>
+        <div style={{ textAlign: "right", flexShrink: 0, minWidth: 80 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: isGood ? "var(--success)" : delta !== 0 ? "var(--danger)" : "var(--text-primary)" }}>
+            {formatMetricValue(m.currentValue, m.unit)}
+          </div>
+          {delta !== 0 && (
+            <div style={{ fontSize: 10, color: isGood ? "var(--success)" : "var(--danger)" }}>
+              {delta > 0 ? "↑" : "↓"} {Math.abs(delta).toLocaleString()}
+            </div>
+          )}
+        </div>
+        {m.targetValue != null && (
+          <div style={{ flexShrink: 0, fontSize: 11, color: "var(--text-secondary)", textAlign: "right", minWidth: 70 }}>
+            <div style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: ".06em" }}>TARGET</div>
+            <div>{formatMetricValue(m.targetValue, m.unit)}</div>
+          </div>
+        )}
+        {pct !== null && (
+          <div style={{ width: 110, flexShrink: 0 }}>
+            <ProgressBar value={pct} color={healthColor(pct)} height={5} />
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, textAlign: "right" }}>{pct}%</div>
+          </div>
+        )}
+        <div
+          style={{ display: "flex", gap: 5, flexShrink: 0 }}
+          onClick={stop}
+          onPointerDown={stopPointer}
+        >
+          <button onClick={onUpdate} style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "transparent", color: "var(--text-primary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Update</button>
+          <button onClick={onEdit} style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "transparent", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Edit</button>
+          <button onClick={onDelete} style={{ padding: "4px 7px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✕</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
