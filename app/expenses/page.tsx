@@ -12,6 +12,7 @@ export default function ExpensesPage() {
   const [depts, setDepts]     = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
   const [hov, setHov]         = useState<number | null>(null);
   const { ts, toast }         = useToast();
@@ -36,6 +37,18 @@ export default function ExpensesPage() {
     await load(); setShowAdd(false); toast("Expense entry added");
   };
 
+  const update = async () => {
+    if (!editing) return;
+    if (!form.amount || !form.description) return toast("Amount and description required", "er");
+    const res = await fetch(`/api/expenses/${editing.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    if (!res.ok) return toast("Update failed", "er");
+    await load(); setEditing(null); toast("Expense updated");
+  };
+
   const del = async (id: string | number) => {
     await fetch(`/api/expenses/${id}`, { method:"DELETE" });
     setEntries(p => p.filter(e => String(e.id) !== String(id)));
@@ -43,6 +56,39 @@ export default function ExpensesPage() {
   };
 
   const openAdd = () => { setForm({ ...blank, departmentId: String(depts[0]?.id ?? ""), departmentName: depts[0]?.name ?? "" }); setShowAdd(true); };
+  const openEdit = (e: ExpenseEntry) => {
+    setEditing(e);
+    setForm({
+      amount: e.amount,
+      departmentId: e.departmentId ?? "",
+      departmentName: e.departmentName ?? "",
+      description: e.description,
+      month: e.month,
+      year: e.year,
+    });
+  };
+
+  // Reusable form JSX (NOT a component — defined as a JSX value so React reuses
+  // the same element types across re-renders and inputs keep focus). Rendered
+  // in both the Add and Edit modals.
+  const expenseForm = (
+    <>
+      <FormField label="Amount ($)"><HubInput type="number" value={form.amount||""} onChange={e => setForm(p => ({...p,amount:+e.target.value}))} placeholder="50000" /></FormField>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <FormField label="Month">
+          <HubSelect value={form.month} onChange={e => setForm(p => ({...p,month:e.target.value}))}>
+            {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+          </HubSelect>
+        </FormField>
+        <FormField label="Department">
+          <HubSelect value={form.departmentId} onChange={e => selectDept(+e.target.value)}>
+            {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </HubSelect>
+        </FormField>
+      </div>
+      <FormField label="Description"><HubInput value={form.description} onChange={e => setForm(p => ({...p,description:e.target.value}))} placeholder="Brief description…" /></FormField>
+    </>
+  );
 
   const byMonth = MONTHS.map(m => entries.filter(e => e.month === m).reduce((a, e) => a + e.amount, 0));
   const maxM = Math.max(...byMonth, 1);
@@ -101,7 +147,12 @@ export default function ExpensesPage() {
                   <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{e.departmentName}</td>
                   <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{e.description}</td>
                   <td style={{ fontSize:13, fontWeight:700, color:"var(--danger)" }}>{formatValue(e.amount,"currency")}</td>
-                  <td><button onClick={() => del(e.id)} style={{ padding:"3px 8px", borderRadius:6, border:"none", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button></td>
+                  <td>
+                    <div style={{ display:"flex", gap:5 }}>
+                      <button onClick={() => openEdit(e)} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
+                      <button onClick={() => del(e.id)} style={{ padding:"4px 7px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -110,23 +161,18 @@ export default function ExpensesPage() {
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Expense Entry">
-        <FormField label="Amount ($)"><HubInput type="number" value={form.amount||""} onChange={e => setForm(p => ({...p,amount:+e.target.value}))} placeholder="50000" /></FormField>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-          <FormField label="Month">
-            <HubSelect value={form.month} onChange={e => setForm(p => ({...p,month:e.target.value}))}>
-              {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-            </HubSelect>
-          </FormField>
-          <FormField label="Department">
-            <HubSelect value={form.departmentId} onChange={e => selectDept(+e.target.value)}>
-              {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </HubSelect>
-          </FormField>
-        </div>
-        <FormField label="Description"><HubInput value={form.description} onChange={e => setForm(p => ({...p,description:e.target.value}))} placeholder="Brief description…" /></FormField>
+        {expenseForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setShowAdd(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={save} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Add Expense</button>
+        </div>
+      </Modal>
+
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit Expense · ${editing?.month ?? ""} ${editing?.year ?? ""}`}>
+        {expenseForm}
+        <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
+          <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+          <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>
         </div>
       </Modal>
     </AppLayout>
