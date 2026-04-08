@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql, rowsToCamel } from "@/lib/db";
 
-// fallback to seed data when DB not configured
-import { notifications as seedNotifs } from "@/lib/seed";
-
 interface Notif {
   id: string | number;
   type: string;
@@ -62,21 +59,19 @@ export async function GET() {
       FROM notifications ORDER BY created_at DESC LIMIT 30
     `;
     dbNotifs = rowsToCamel(rows as Record<string, unknown>[]) as Notif[];
-  } catch {
-    // DB not configured — fall back to seed data
-    dbNotifs = [...seedNotifs].reverse() as unknown as Notif[];
+  } catch (e) {
+    console.warn("[notifications/GET] DB query failed, returning birthdays only:", (e as Error).message);
+    dbNotifs = [];
   }
   const bdays = await birthdayNotifications();
-  // Birthdays first (most important), then regular notifications
   return NextResponse.json({ data: [...bdays, ...dbNotifs] });
 }
 
 export async function PATCH() {
   try {
     await sql`UPDATE notifications SET is_read = TRUE`;
-  } catch {
-    // seed fallback
-    seedNotifs.forEach(n => { n.read = true; });
+  } catch (e) {
+    console.warn("[notifications/PATCH] mark-all-read failed:", (e as Error).message);
   }
   return NextResponse.json({ message: "All marked read" });
 }

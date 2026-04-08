@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { tasks } from "@/lib/seed";
+import { sql } from "@/lib/db";
 import { requireAdminOrLeader } from "@/lib/authz";
 
-// Body: { items: [{ id, status, sortOrder }] } — reorders the in-memory tasks
-// array and (optionally) updates each task's status. Used by both within-column
-// reorder and cross-column drag on the tasks kanban.
+// Body: { items: [{ id, status, sortOrder }] } — reorders tasks and (optionally)
+// updates each task's status. Used by both within-column reorder and cross-column
+// drag on the tasks kanban.
 export async function PATCH(req: NextRequest) {
   const forbidden = await requireAdminOrLeader();
   if (forbidden) return forbidden;
@@ -14,19 +14,20 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "items must be an array" }, { status: 400 });
   }
 
-  const orderIndex = new Map<number, number>();
-  for (const it of items) {
-    const id = Number(it.id);
-    const idx = tasks.findIndex(t => t.id === id);
-    if (idx === -1) continue;
-    if (it.status) tasks[idx] = { ...tasks[idx], status: it.status };
-    orderIndex.set(id, Number(it.sortOrder ?? 0));
+  try {
+    for (const it of items) {
+      if (!it.id) continue;
+      await sql`
+        UPDATE tasks SET
+          sort_order = ${Number(it.sortOrder) || 0},
+          status     = COALESCE(${it.status ?? null}, status),
+          updated_at = NOW()
+        WHERE id = ${it.id}
+      `;
+    }
+    return NextResponse.json({ message: "Reordered", count: items.length });
+  } catch (e: unknown) {
+    console.error("[tasks/reorder/PATCH] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-  tasks.sort((a, b) => {
-    const ai = orderIndex.has(a.id) ? (orderIndex.get(a.id) as number) : 9999;
-    const bi = orderIndex.has(b.id) ? (orderIndex.get(b.id) as number) : 9999;
-    return ai - bi;
-  });
-
-  return NextResponse.json({ message: "Reordered", count: items.length });
 }

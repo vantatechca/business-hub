@@ -14,7 +14,7 @@ export default function ExpensesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
-  const [hov, setHov]         = useState<number | null>(null);
+  const [hov, setHov]         = useState<string | null>(null);
   const { ts, toast }         = useToast();
 
   const load = () => Promise.all([
@@ -142,7 +142,7 @@ export default function ExpensesPage() {
             <thead><tr>{["Month","Department","Description","Amount",""].map(h => <th key={h}>{h}</th>)}</tr></thead>
             <tbody>
               {entries.map(e => (
-                <tr key={e.id} onMouseEnter={() => setHov(e.id)} onMouseLeave={() => setHov(null)} style={{ background: hov===e.id ? "var(--bg-card-hover)" : "transparent" }}>
+                <tr key={e.id} onMouseEnter={() => setHov(String(e.id))} onMouseLeave={() => setHov(null)} style={{ background: hov === String(e.id) ? "var(--bg-card-hover)" : "transparent" }}>
                   <td style={{ fontSize:12, color:"var(--text-primary)", fontWeight:600 }}>{e.month} {e.year}</td>
                   <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{e.departmentName}</td>
                   <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{e.description}</td>

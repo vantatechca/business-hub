@@ -3,9 +3,6 @@ import { sql, rowsToCamel, toCamel } from "@/lib/db";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// In-memory fallback when DB not set up
-const memCheckins: Record<string, unknown>[] = [];
-
 // GET /api/checkin
 //   ?date=YYYY-MM-DD                         → all checkins for that single day
 //   ?userId=UUID&date=YYYY-MM-DD             → that user's checkin for that day (1)
@@ -59,12 +56,9 @@ export async function GET(req: NextRequest) {
       `;
     }
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
-  } catch {
-    const targetDate = date ?? new Date().toISOString().slice(0, 10);
-    const filtered = userId
-      ? memCheckins.filter(c => c.userId === userId && String(c.checkinDate).slice(0,10) === targetDate)
-      : memCheckins.filter(c => String(c.checkinDate).slice(0,10) === targetDate);
-    return NextResponse.json({ data: filtered });
+  } catch (e) {
+    console.error("[checkin/GET] error:", e);
+    return NextResponse.json({ data: [] });
   }
 }
 
@@ -118,10 +112,8 @@ export async function POST(req: NextRequest) {
     await sql`UPDATE users SET last_checkin_at = NOW() WHERE id = ${record.userId}`;
 
     return NextResponse.json({ data: toCamel(rows[0] as Record<string,unknown>) }, { status: 201 });
-  } catch {
-    // Memory fallback
-    const ci = { ...record, id: Date.now() };
-    memCheckins.push(ci);
-    return NextResponse.json({ data: ci }, { status: 201 });
+  } catch (e) {
+    console.error("[checkin/POST] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 }

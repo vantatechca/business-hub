@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { goals } from "@/lib/seed";
+import { sql } from "@/lib/db";
 import { requireAdminOrLeader } from "@/lib/authz";
 
 export async function PATCH(req: NextRequest) {
@@ -10,11 +10,13 @@ export async function PATCH(req: NextRequest) {
   if (!Array.isArray(ids)) {
     return NextResponse.json({ error: "ids must be an array" }, { status: 400 });
   }
-  const pos = new Map<number, number>(ids.map((id: number | string, i: number) => [Number(id), i]));
-  goals.sort((a, b) => {
-    const ai = pos.has(a.id) ? (pos.get(a.id) as number) : 9999;
-    const bi = pos.has(b.id) ? (pos.get(b.id) as number) : 9999;
-    return ai - bi;
-  });
-  return NextResponse.json({ message: "Reordered", count: ids.length });
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      await sql`UPDATE goals SET sort_order = ${i}, updated_at = NOW() WHERE id = ${ids[i]}`;
+    }
+    return NextResponse.json({ message: "Reordered", count: ids.length });
+  } catch (e: unknown) {
+    console.error("[goals/reorder/PATCH] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
 }

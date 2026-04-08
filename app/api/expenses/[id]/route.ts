@@ -1,19 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { expenseEntries } from "@/lib/seed";
+import { sql } from "@/lib/db";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params.id);
-  const body = await req.json();
-  const idx = expenseEntries.findIndex(e => e.id === id);
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  expenseEntries[idx] = { ...expenseEntries[idx], ...body, id };
-  return NextResponse.json({ data: expenseEntries[idx] });
+  const b = await req.json();
+  try {
+    if (b.amount       !== undefined) await sql`UPDATE expense_entries SET amount = ${Number(b.amount) || 0} WHERE id = ${params.id}`;
+    if (b.departmentId !== undefined) await sql`UPDATE expense_entries SET department_id = ${b.departmentId || null} WHERE id = ${params.id}`;
+    if (b.description  !== undefined) await sql`UPDATE expense_entries SET description = ${b.description} WHERE id = ${params.id}`;
+    if (b.month        !== undefined) await sql`UPDATE expense_entries SET month = ${b.month} WHERE id = ${params.id}`;
+    if (b.year         !== undefined) await sql`UPDATE expense_entries SET year = ${Number(b.year) || new Date().getFullYear()} WHERE id = ${params.id}`;
+    return NextResponse.json({ message: "Updated" });
+  } catch (e: unknown) {
+    console.error("[expenses/[id]/PATCH] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params.id);
-  const idx = expenseEntries.findIndex(e => e.id === id);
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  expenseEntries.splice(idx, 1);
-  return NextResponse.json({ message: "Deleted" });
+  try {
+    await sql`DELETE FROM expense_entries WHERE id = ${params.id}`;
+    return NextResponse.json({ message: "Deleted" });
+  } catch (e: unknown) {
+    console.error("[expenses/[id]/DELETE] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
 }

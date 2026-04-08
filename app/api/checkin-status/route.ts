@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { sql, rowsToCamel } from "@/lib/db";
-import { teamMembers } from "@/lib/seed";
 
-// Returns today's check-in status for all team members
-// Used by the dashboard "missing check-ins" count
+// Returns today's check-in status for all team members.
+// Used by the dashboard "missing check-ins" count.
 export async function GET() {
   const today = new Date().toISOString().slice(0, 10);
   try {
@@ -22,16 +21,16 @@ export async function GET() {
       ...u,
       checkedIn: !!u.checkinId,
     }));
-    const missing = data.filter((u: Record<string,unknown>) => !u.checkedIn).map((u: Record<string,unknown>) => u.name as string);
-    return NextResponse.json({ data, missing, rate: Math.round((data.length - missing.length) / Math.max(data.length, 1) * 100) });
-  } catch {
-    // Memory fallback
-    const members = teamMembers.filter(m => m.role === "member");
-    const missing = members.filter(m => !m.checkedInToday).map(m => m.name);
+    const missing = data
+      .filter((u: Record<string,unknown>) => !u.checkedIn)
+      .map((u: Record<string,unknown>) => u.name as string);
     return NextResponse.json({
-      data: members.map(m => ({ id:m.id, name:m.name, checkedIn:m.checkedInToday })),
+      data,
       missing,
-      rate: Math.round(members.filter(m => m.checkedInToday).length / Math.max(members.length, 1) * 100),
+      rate: Math.round((data.length - missing.length) / Math.max(data.length, 1) * 100),
     });
+  } catch (e) {
+    console.error("[checkin-status/GET] error:", e);
+    return NextResponse.json({ data: [], missing: [], rate: 0 }, { status: 200 });
   }
 }
