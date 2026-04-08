@@ -42,7 +42,9 @@ const blankTask = {
   assigneeName: "",
   dueDate: todayIso(),
 };
-const blankMember = { userId: "", role: "member" as "admin" | "leader" | "member" };
+// "Department role" here is the user's top-level system role, not the junction
+// table's per-dept role. Form dropdown is kept in sync with the 5-tier system.
+const blankMember = { userId: "", role: "member" as "admin" | "manager" | "lead" | "member" };
 
 export default function DepartmentDetailPage() {
   const router = useRouter();
@@ -122,9 +124,9 @@ export default function DepartmentDetailPage() {
   const myRevenue  = dept ? revenue.filter(matchesDept) : [];
   const myExpenses = dept ? expenses.filter(matchesDept) : [];
 
-  // Team scoped to this department. Leaders sort first so the "team lead"
+  // Team scoped to this department. Admin-tier roles sort first so the "team lead"
   // appears on top; members are sorted alphabetically after.
-  const roleOrder: Record<string, number> = { admin: 0, leader: 1, member: 2 };
+  const roleOrder: Record<string, number> = { super_admin: 0, admin: 1, manager: 2, leader: 2, lead: 3, member: 4 };
   const myTeam = dept
     ? team
         .filter(m => String((m as unknown as { departmentId?: string }).departmentId ?? "") === String(dept.id)
@@ -199,7 +201,7 @@ export default function DepartmentDetailPage() {
     setMemberForm(p => ({
       ...p,
       userId,
-      role: (picked?.role as "admin" | "leader" | "member") ?? "member",
+      role: ((picked?.role === "leader" ? "manager" : picked?.role) as "admin" | "manager" | "lead" | "member") ?? "member",
     }));
   };
 
@@ -390,10 +392,11 @@ export default function DepartmentDetailPage() {
       <FormField label="Role">
         <HubSelect
           value={memberForm.role}
-          onChange={e => setMemberForm(p => ({ ...p, role: e.target.value as "admin" | "leader" | "member" }))}
+          onChange={e => setMemberForm(p => ({ ...p, role: e.target.value as "admin" | "manager" | "lead" | "member" }))}
         >
           <option value="admin">Admin</option>
-          <option value="leader">Leader</option>
+          <option value="manager">Manager</option>
+          <option value="lead">Lead</option>
           <option value="member">Member</option>
         </HubSelect>
       </FormField>
@@ -870,7 +873,14 @@ function DeptTeamTab({
   onAddMember: () => void;
   onRemoveMember: (m: TeamMember) => void;
 }) {
-  const roleColor: Record<string, string> = { admin: "var(--violet)", leader: "var(--warning)", member: "var(--accent)" };
+  const roleColor: Record<string, string> = {
+    super_admin: "var(--danger)",
+    admin: "var(--violet)",
+    manager: "var(--warning)",
+    leader: "var(--warning)",
+    lead: "var(--accent)",
+    member: "var(--accent)",
+  };
   const statusColor: Record<string, string> = { active: "var(--success)", away: "var(--warning)", busy: "var(--danger)", offline: "var(--text-muted)" };
   const [confirming, setConfirming] = useState<TeamMember | null>(null);
   return (
@@ -903,9 +913,9 @@ function DeptTeamTab({
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
                           {m.name}
-                          {m.role === "leader" && (
+                          {(m.role === "leader" || m.role === "manager" || m.role === "lead") && (
                             <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 4, background: "var(--warning-bg)", color: "var(--warning)", letterSpacing: ".06em", textTransform: "uppercase" }}>
-                              Team Lead
+                              {m.role === "lead" ? "Lead" : "Team Lead"}
                             </span>
                           )}
                         </div>

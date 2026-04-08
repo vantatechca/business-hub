@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, rowsToCamel, toCamel } from "@/lib/db";
+import { getSessionUser, canSeeSuperAdmin } from "@/lib/authz";
+import { logAudit } from "@/lib/audit";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -9,6 +11,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 //   ?userId=UUID&from=YYYY-MM-DD&to=YYYY-MM-DD → that user's checkins in range
 //   ?from=YYYY-MM-DD&to=YYYY-MM-DD           → all checkins in range
 export async function GET(req: NextRequest) {
+  const me = await getSessionUser();
   const { searchParams } = new URL(req.url);
   const userId = searchParams.get("userId");
   const date   = searchParams.get("date");
@@ -18,42 +21,75 @@ export async function GET(req: NextRequest) {
   // Demo / non-UUID users have no DB rows.
   if (userId && !UUID_RE.test(userId)) return NextResponse.json({ data: [] });
 
+  const includeSA = canSeeSuperAdmin(me?.role);
   try {
     let rows;
     if (userId && from && to) {
-      rows = await sql`
-        SELECT dc.*, u.name AS user_name
-        FROM daily_checkins dc
-        JOIN users u ON u.id = dc.user_id
-        WHERE dc.user_id = ${userId} AND dc.checkin_date BETWEEN ${from} AND ${to}
-        ORDER BY dc.checkin_date DESC
-      `;
+      rows = includeSA
+        ? await sql`
+            SELECT dc.*, u.name AS user_name
+            FROM daily_checkins dc
+            JOIN users u ON u.id = dc.user_id
+            WHERE dc.user_id = ${userId} AND dc.checkin_date BETWEEN ${from} AND ${to}
+            ORDER BY dc.checkin_date DESC
+          `
+        : await sql`
+            SELECT dc.*, u.name AS user_name
+            FROM daily_checkins dc
+            JOIN users u ON u.id = dc.user_id
+            WHERE dc.user_id = ${userId} AND dc.checkin_date BETWEEN ${from} AND ${to} AND u.role != 'super_admin'
+            ORDER BY dc.checkin_date DESC
+          `;
     } else if (from && to) {
-      rows = await sql`
-        SELECT dc.*, u.name AS user_name
-        FROM daily_checkins dc
-        JOIN users u ON u.id = dc.user_id
-        WHERE dc.checkin_date BETWEEN ${from} AND ${to}
-        ORDER BY dc.checkin_date DESC, dc.created_at DESC
-      `;
+      rows = includeSA
+        ? await sql`
+            SELECT dc.*, u.name AS user_name
+            FROM daily_checkins dc
+            JOIN users u ON u.id = dc.user_id
+            WHERE dc.checkin_date BETWEEN ${from} AND ${to}
+            ORDER BY dc.checkin_date DESC, dc.created_at DESC
+          `
+        : await sql`
+            SELECT dc.*, u.name AS user_name
+            FROM daily_checkins dc
+            JOIN users u ON u.id = dc.user_id
+            WHERE dc.checkin_date BETWEEN ${from} AND ${to} AND u.role != 'super_admin'
+            ORDER BY dc.checkin_date DESC, dc.created_at DESC
+          `;
     } else if (userId) {
       const targetDate = date ?? new Date().toISOString().slice(0, 10);
-      rows = await sql`
-        SELECT dc.*, u.name AS user_name
-        FROM daily_checkins dc
-        JOIN users u ON u.id = dc.user_id
-        WHERE dc.user_id = ${userId} AND dc.checkin_date = ${targetDate}
-        ORDER BY dc.created_at DESC LIMIT 1
-      `;
+      rows = includeSA
+        ? await sql`
+            SELECT dc.*, u.name AS user_name
+            FROM daily_checkins dc
+            JOIN users u ON u.id = dc.user_id
+            WHERE dc.user_id = ${userId} AND dc.checkin_date = ${targetDate}
+            ORDER BY dc.created_at DESC LIMIT 1
+          `
+        : await sql`
+            SELECT dc.*, u.name AS user_name
+            FROM daily_checkins dc
+            JOIN users u ON u.id = dc.user_id
+            WHERE dc.user_id = ${userId} AND dc.checkin_date = ${targetDate} AND u.role != 'super_admin'
+            ORDER BY dc.created_at DESC LIMIT 1
+          `;
     } else {
       const targetDate = date ?? new Date().toISOString().slice(0, 10);
-      rows = await sql`
-        SELECT dc.*, u.name AS user_name
-        FROM daily_checkins dc
-        JOIN users u ON u.id = dc.user_id
-        WHERE dc.checkin_date = ${targetDate}
-        ORDER BY dc.created_at DESC
-      `;
+      rows = includeSA
+        ? await sql`
+            SELECT dc.*, u.name AS user_name
+            FROM daily_checkins dc
+            JOIN users u ON u.id = dc.user_id
+            WHERE dc.checkin_date = ${targetDate}
+            ORDER BY dc.created_at DESC
+          `
+        : await sql`
+            SELECT dc.*, u.name AS user_name
+            FROM daily_checkins dc
+            JOIN users u ON u.id = dc.user_id
+            WHERE dc.checkin_date = ${targetDate} AND u.role != 'super_admin'
+            ORDER BY dc.created_at DESC
+          `;
     }
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
   } catch (e) {
@@ -104,14 +140,23 @@ export async function POST(req: NextRequest) {
         wins                  = EXCLUDED.wins,
         blockers              = EXCLUDED.blockers,
         status                = EXCLUDED.status,
-        submitted_at          = NOW()
+        submitted_at          = NOW(),
+        updated_at            = NOW()
       RETURNING *
     `;
 
     // Update user's last_checkin_at
     await sql`UPDATE users SET last_checkin_at = NOW() WHERE id = ${record.userId}`;
 
-    return NextResponse.json({ data: toCamel(rows[0] as Record<string,unknown>) }, { status: 201 });
+    const created = toCamel(rows[0] as Record<string,unknown>);
+    await logAudit({
+      action: "checkin.create",
+      entityType: "checkin",
+      entityId: (created as { id: string }).id,
+      metadata: { userId: record.userId, date: today },
+      req,
+    });
+    return NextResponse.json({ data: created }, { status: 201 });
   } catch (e) {
     console.error("[checkin/POST] error:", e);
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

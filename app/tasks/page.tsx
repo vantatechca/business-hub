@@ -42,7 +42,7 @@ const blankMember = { name: "", role: "", departmentId: "" as string | number, d
 export default function TasksPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
-  const canReorder = role === "admin" || role === "leader";
+  const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
 
   const [tasks, setTasks]   = useState<Task[]>([]);
   const [depts, setDepts]   = useState<Department[]>([]);

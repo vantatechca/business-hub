@@ -1,4 +1,13 @@
-export type UserRole = "admin" | "leader" | "member";
+// 5-tier role hierarchy (top → bottom):
+//   super_admin — hidden from everyone else; full power
+//   admin       — full admin (cannot see super_admin)
+//   manager     — reviews check-ins, views profiles
+//   lead        — leads one or more departments; no review / profile powers
+//   member      — basic user
+// "leader" is a deprecated alias from the old 3-role system. The migration
+// in scripts/setup-db.js rewrites any existing leader rows to manager, but
+// the type is kept here so mixed-state deployments don't fail to compile.
+export type UserRole = "super_admin" | "admin" | "manager" | "lead" | "member" | "leader";
 export type MetricType = "value" | "daily" | "value_and_daily";
 export type MetricDirection = "higher_better" | "lower_better";
 export type AssignmentRole = "owner" | "contributor" | "reviewer";
@@ -11,6 +20,49 @@ export interface User {
   avatarUrl?: string; timezone?: string; isActive: boolean;
   lastLoginAt?: string; lastCheckinAt?: string; createdAt: string;
   initials?: string; checkedInToday?: boolean; streak?: number;
+  mustChangePassword?: boolean;
+  requiresCheckin?: boolean;
+  birthdayNotifications?: boolean;
+}
+
+// Profile fields editable by a user themselves (plus admin/super admin).
+// Lead / member can only read their own; admin/manager can read others'.
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  timezone?: string;
+  birthday?: string | null;
+  jobTitle?: string | null;
+  avatarUrl?: string | null;
+  // Self-authored fields
+  address?: string | null;
+  phone?: string | null;
+  skills?: string | null;
+  hobbies?: string | null;
+  favoriteQuote?: string | null;
+  bio?: string | null;
+  pronouns?: string | null;
+  departmentIds?: string[];
+  departments?: Array<{ id: string; name: string; color?: string; roleInDept?: "lead" | "member" }>;
+  requiresCheckin?: boolean;
+  birthdayNotifications?: boolean;
+  mustChangePassword?: boolean;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  occurredAt: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  actorRole: string | null;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 export interface Department {
@@ -160,16 +212,23 @@ export interface TeamMember {
   name: string;
   email: string;
   initials: string;
-  role: UserRole;                                    // admin | leader | member
+  role: UserRole;                                    // 5-tier system
   jobTitle?: string;                                 // free-text title ("Senior Engineer")
+  // Legacy single-dept fields, still populated for back-compat on pages that
+  // haven't moved to multi-dept yet.
   departmentId?: string;
   departmentName?: string;
+  // Multi-department: all departments this user belongs to, with per-dept
+  // role_in_dept distinguishing a Lead from a Member within that department.
+  departments?: Array<{ id: string; name: string; color?: string; roleInDept?: "lead" | "member" }>;
   status: "active" | "away" | "busy" | "offline";
   birthday?: string | null;
   checkedInToday?: boolean;
   isActive?: boolean;
   lastLoginAt?: string | null;
   lastCheckinAt?: string | null;
+  requiresCheckin?: boolean;
+  birthdayNotifications?: boolean;
 }
 export interface Task {
   id: string;

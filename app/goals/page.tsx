@@ -13,7 +13,7 @@ const blank = { name:"", target:100, current:0, format:"number" as Goal["format"
 export default function GoalsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
-  const canReorder = role === "admin" || role === "leader";
+  const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
 
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);

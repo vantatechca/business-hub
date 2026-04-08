@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   email         VARCHAR(255) UNIQUE NOT NULL,
   name          VARCHAR(255) NOT NULL,
   password_hash TEXT NOT NULL,
-  role          VARCHAR(20) NOT NULL DEFAULT 'member' CHECK (role IN ('admin','leader','member')),
+  role          VARCHAR(20) NOT NULL DEFAULT 'member' CHECK (role IN ('super_admin','admin','manager','lead','member','leader')),
   avatar_url    TEXT,
   timezone      VARCHAR(50) DEFAULT 'America/Toronto',
   is_active     BOOLEAN DEFAULT TRUE,

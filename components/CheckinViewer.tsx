@@ -145,7 +145,9 @@ function Section({ title, body }: { title: string; body: string }) {
 export default function CheckinViewer({ checkin, open, onClose, onReviewed }: Props) {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role ?? "member";
-  const canReview = role === "admin" || role === "leader";
+  // Only manager / admin / super_admin can review. Lead + member cannot.
+  // "leader" is kept for back-compat with mixed-state deployments.
+  const canReview = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
 
   const [hydrated, setHydrated] = useState<DailyCheckin | null>(checkin);
   const [loading, setLoading] = useState(false);

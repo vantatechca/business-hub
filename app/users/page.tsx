@@ -3,17 +3,27 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState } from "@/components/ui/shared";
-import type { User } from "@/lib/types";
+import ProfileDrawer from "@/components/ProfileDrawer";
+import type { User, UserRole } from "@/lib/types";
 import { getInitials } from "@/lib/types";
 
-const ROLES  = ["admin","leader","member"];
+type FormRole = Exclude<UserRole, "super_admin" | "leader">;
+const ROLES: FormRole[] = ["admin", "manager", "lead", "member"];
 const TZONES = ["America/Toronto","America/New_York","America/Chicago","America/Los_Angeles","Europe/Paris","Asia/Manila"];
-const SCOL: Record<string,string> = { admin:"var(--violet)", leader:"var(--warning)", member:"var(--accent)" };
-const blank = { name:"", email:"", role:"member" as User["role"], timezone:"America/Toronto", password:"member123", birthday:"" as string };
+const SCOL: Record<string, string> = {
+  super_admin: "var(--danger)",
+  admin:       "var(--violet)",
+  manager:     "var(--warning)",
+  leader:      "var(--warning)",
+  lead:        "var(--accent)",
+  member:      "var(--accent)",
+};
+const blank = { name:"", email:"", role:"member" as FormRole, timezone:"America/Toronto", password:"member123", birthday:"" as string };
 
 export default function UsersPage() {
   const { data: session } = useSession();
-  const isAdmin = (session?.user as { role?: string })?.role === "admin";
+  const myRole = (session?.user as { role?: string })?.role ?? "member";
+  const isAdmin = myRole === "admin" || myRole === "super_admin";
   const [users, setUsers]     = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ]             = useState("");
@@ -23,9 +33,7 @@ export default function UsersPage() {
   const [deleting, setDeleting] = useState<User | null>(null);
   const [resetting, setResetting] = useState<User | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
-  // Credentials modal shown once after creating a user or resetting a
-  // password. Holds the email + plaintext password the admin needs to share.
-  // The password is never retrievable after this modal is dismissed.
+  const [drawerUserId, setDrawerUserId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<{ email: string; password: string; name: string; kind: "created" | "reset" } | null>(null);
   const { ts, toast } = useToast();
 
@@ -73,9 +81,7 @@ export default function UsersPage() {
     await load(); toast("User deactivated", "wa");
   };
 
-  // Admin-only: regenerate a temp password for the selected user. The API
-  // returns the plaintext once; we hand it straight to the credentials
-  // modal so the admin can copy it.
+  // Admin-only: regenerate a temp password for the selected user.
   const resetPassword = async () => {
     if (!resetting) return;
     const res = await fetch(`/api/users/${resetting.id}/reset-password`, { method: "POST" });
@@ -96,10 +102,15 @@ export default function UsersPage() {
 
   const openEdit = (u: User) => {
     setEditing(u);
+    // Map super_admin / leader down to a valid form role. Admin/SA can still
+    // see their own super_admin row if they're the SA (stealth allows it).
+    const role: FormRole =
+      u.role === "super_admin" || u.role === "leader" ? "manager"
+      : (u.role as FormRole);
     setForm({
       name: u.name,
       email: u.email,
-      role: u.role,
+      role,
       timezone: u.timezone ?? "America/Toronto",
       password: "",
       birthday: ((u as unknown as { birthday?: string | null }).birthday) ?? "",
@@ -112,7 +123,7 @@ export default function UsersPage() {
       <FormField label="Email"><HubInput type="email" value={form.email} onChange={e => setForm(p => ({...p, email:e.target.value}))} placeholder="user@hub.com" disabled={!!editing}/></FormField>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11 }}>
         <FormField label="Role">
-          <HubSelect value={form.role} onChange={e => setForm(p => ({...p, role:e.target.value as User["role"]}))}>
+          <HubSelect value={form.role} onChange={e => setForm(p => ({...p, role:e.target.value as FormRole}))}>
             {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase()+r.slice(1)}</option>)}
           </HubSelect>
         </FormField>
@@ -130,6 +141,11 @@ export default function UsersPage() {
         />
       </FormField>
       {!editing && <FormField label="Initial Password"><HubInput value={form.password} onChange={e => setForm(p => ({...p, password:e.target.value}))} placeholder="member123"/></FormField>}
+      {form.role === "manager" && !editing && (
+        <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent)30", fontSize: 11, color: "var(--accent)" }}>
+          Managers default to requiring daily check-ins and receiving birthday notifications. Toggle per-user in the profile drawer.
+        </div>
+      )}
     </div>
   );
 
@@ -146,8 +162,13 @@ export default function UsersPage() {
       )}
 
       {/* Role summary */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:11, marginBottom:14 }}>
-        {[["admin","Admin","var(--violet)"],["leader","Leaders","var(--warning)"],["member","Members","var(--accent)"]].map(([r,l,c]) => (
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:11, marginBottom:14 }}>
+        {[
+          ["admin","Admins","var(--violet)"],
+          ["manager","Managers","var(--warning)"],
+          ["lead","Leads","var(--accent)"],
+          ["member","Members","var(--accent)"],
+        ].map(([r,l,c]) => (
           <div key={r} className="hub-card" style={{ padding:"14px 16px" }}>
             <div style={{ fontSize:11, fontWeight:600, color:"var(--text-secondary)", marginBottom:5 }}>{l}</div>
             <div style={{ fontSize:26, fontWeight:800, color:c as string }}>{roleCount(r)}</div>
@@ -179,7 +200,7 @@ export default function UsersPage() {
             <thead><tr>{["User","Email","Role","Timezone","Last Login","Status",""].map(h => <th key={h}>{h}</th>)}</tr></thead>
             <tbody>
               {rows.map(u => (
-                <tr key={u.id}>
+                <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => setDrawerUserId(String(u.id))}>
                   <td>
                     <div style={{ display:"flex", alignItems:"center", gap:9 }}>
                       <Avatar s={u.initials ?? "?"} size={30}/>
@@ -188,7 +209,7 @@ export default function UsersPage() {
                   </td>
                   <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{u.email}</td>
                   <td>
-                    <span style={{ padding:"2px 9px", borderRadius:6, fontSize:11, fontWeight:700, background:`${SCOL[u.role]}18`, color:SCOL[u.role], textTransform:"capitalize" }}>{u.role}</span>
+                    <span style={{ padding:"2px 9px", borderRadius:6, fontSize:11, fontWeight:700, background:`${SCOL[u.role]}22`, color:SCOL[u.role], textTransform:"capitalize" }}>{u.role.replace("_", " ")}</span>
                   </td>
                   <td style={{ fontSize:11, color:"var(--text-secondary)" }}>{u.timezone ?? "—"}</td>
                   <td style={{ fontSize:11, color:"var(--text-secondary)" }}>
@@ -199,7 +220,7 @@ export default function UsersPage() {
                       {u.isActive ? "Active" : "Inactive"}
                     </span>
                   </td>
-                  <td>
+                  <td onClick={e => e.stopPropagation()}>
                     {isAdmin && (
                       <div style={{ display:"flex", gap:5 }}>
                         <button onClick={() => openEdit(u)} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
@@ -231,8 +252,7 @@ export default function UsersPage() {
         </div>
       </Modal>
 
-      {/* One-time credentials modal — shown after creating a user or
-          resetting a password. Password is never retrievable again. */}
+      {/* One-time credentials modal */}
       <Modal
         open={!!credentials}
         onClose={() => setCredentials(null)}
@@ -244,6 +264,7 @@ export default function UsersPage() {
           <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
             Share these credentials with <strong style={{ color: "var(--text-primary)" }}>{credentials?.name}</strong>.
             The password is <strong style={{ color: "var(--warning)" }}>shown once</strong> and cannot be retrieved again — copy it now.
+            They will be prompted to change it on their next login.
           </div>
           <div style={{ padding: "12px 20px", background: "var(--bg-input)", borderRadius: 10, textAlign: "left", fontFamily: "monospace" }}>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>EMAIL</div>
@@ -273,6 +294,13 @@ export default function UsersPage() {
         onConfirm={resetPassword}
         name={`${resetting?.name}'s password`}
         entity="password reset (a new temporary password will be generated)"
+      />
+
+      <ProfileDrawer
+        userId={drawerUserId}
+        open={!!drawerUserId}
+        onClose={() => setDrawerUserId(null)}
+        onSaved={() => { load(); setDrawerUserId(null); }}
       />
     </AppLayout>
   );

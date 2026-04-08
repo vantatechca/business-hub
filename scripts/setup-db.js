@@ -34,6 +34,7 @@ if (fs.existsSync(envPath)) {
 }
 
 const { neon } = require("@neondatabase/serverless");
+const bcrypt = require("bcryptjs");
 
 if (!process.env.DATABASE_URL) {
   console.error("❌  DATABASE_URL not found in .env.local");
@@ -140,6 +141,91 @@ async function runAdditiveMigrations() {
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id ${deptIdType}`,
 
+    // ── v2: 5-tier role system, super admin, profile, audit, checkin review
+    // Role check constraint is dropped/re-added because the original table
+    // only allowed admin/leader/member. A dedicated helper later migrates
+    // any existing 'leader' rows to 'manager'.
+    `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`,
+    `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('super_admin','admin','manager','lead','member','leader'))`,
+
+    // Force password change on first login (true by default for new users)
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT TRUE`,
+
+    // Per-user toggles (default on for managers — enforced in POST /api/users)
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS requires_checkin BOOLEAN DEFAULT FALSE`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS birthday_notifications BOOLEAN DEFAULT FALSE`,
+
+    // Profile fields (self-editable)
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS skills TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS hobbies TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_quote TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS pronouns TEXT`,
+
+    // Existing leaders become managers (they had review power under the old
+    // 3-role system; manager is the new equivalent). Idempotent.
+    `UPDATE users SET role = 'manager' WHERE role = 'leader'`,
+    // After migrating data, tighten the constraint to exclude 'leader'
+    `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`,
+    `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('super_admin','admin','manager','lead','member'))`,
+
+    // Existing managers default to requires_checkin + birthday_notifications
+    // (only runs once — later rows flipped by app logic won't be touched
+    // because the default flips are only for the "manager" role and the
+    // UPDATE is restricted to rows where both fields are still the default).
+    `UPDATE users SET requires_checkin = TRUE, birthday_notifications = TRUE WHERE role = 'manager' AND requires_checkin = FALSE AND birthday_notifications = FALSE`,
+
+    // ── Multi-department junction table
+    // Users can belong to multiple departments. role_in_dept differentiates
+    // a Lead from a Member within a specific department. The primary
+    // department_id column on users is kept as a "primary" hint.
+    `CREATE TABLE IF NOT EXISTS user_departments (
+      user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      department_id ${deptIdType} NOT NULL,
+      role_in_dept  VARCHAR(20) DEFAULT 'member' CHECK (role_in_dept IN ('lead','member')),
+      created_at    TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (user_id, department_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_user_departments_user ON user_departments(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_departments_dept ON user_departments(department_id)`,
+
+    // Backfill: copy existing users.department_id rows into the junction
+    // table once (ON CONFLICT DO NOTHING makes it idempotent). New users
+    // written after this migration ran should write directly to the junction.
+    `INSERT INTO user_departments (user_id, department_id, role_in_dept)
+     SELECT u.id, u.department_id,
+            CASE WHEN u.role = 'lead' THEN 'lead' ELSE 'member' END
+     FROM users u
+     WHERE u.department_id IS NOT NULL
+     ON CONFLICT (user_id, department_id) DO NOTHING`,
+
+    // ── Audit log
+    // Used for auth events, CRUD operations, and check-in reviews. Retention
+    // is manual: super_admin can bulk-delete by date range from the audit
+    // page.
+    `CREATE TABLE IF NOT EXISTS audit_logs (
+      id           BIGSERIAL PRIMARY KEY,
+      occurred_at  TIMESTAMPTZ DEFAULT NOW(),
+      actor_id     UUID REFERENCES users(id) ON DELETE SET NULL,
+      actor_email  TEXT,
+      actor_role   TEXT,
+      action       TEXT NOT NULL,
+      entity_type  TEXT,
+      entity_id    TEXT,
+      ip           TEXT,
+      user_agent   TEXT,
+      metadata     JSONB
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_logs_occurred_at ON audit_logs(occurred_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)`,
+
+    // ── Check-in review audit
+    `ALTER TABLE daily_checkins ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`,
+    `ALTER TABLE daily_checkins ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
+
     // Metrics — optional due date. When set, notifications (separate feature)
     // ping assignees at T-7d / T-3d / T-0 until the metric is marked complete.
     `ALTER TABLE metrics ADD COLUMN IF NOT EXISTS due_date DATE`,
@@ -234,11 +320,36 @@ async function runAdditiveMigrations() {
   console.log(`\n✅  Additive migrations complete (${ok}/${stmts.length} statements ok)\n`);
 }
 
+// Idempotent — only creates the super admin if it doesn't already exist.
+// The account is hidden from every other user via the stealth filter in
+// lib/authz.ts. The password is intentionally weak because must_change_password
+// is set to TRUE — the first login forces a password change.
+async function bootstrapSuperAdmin() {
+  console.log("📐  Super admin bootstrap…");
+  const email = "super-admin@godview.com";
+  try {
+    const existing = await sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
+    if (existing.length) {
+      console.log("    super admin already exists — skipping\n");
+      return;
+    }
+    const hash = await bcrypt.hash("temp123", 10);
+    await sql`
+      INSERT INTO users (email, name, password_hash, role, timezone, is_active, must_change_password)
+      VALUES (${email}, ${"Super Admin"}, ${hash}, ${"super_admin"}, ${"America/Toronto"}, TRUE, TRUE)
+    `;
+    console.log("    ✓ created super-admin@godview.com (temp password: temp123)\n");
+  } catch (e) {
+    console.error("⚠️  super admin bootstrap failed:", String(e.message || "").slice(0, 200));
+  }
+}
+
 async function run() {
   console.log("🚀  Business Hub V2 — Database Setup\n");
 
   await runFile("Core migrations", "migrate.sql");
   await runAdditiveMigrations();
+  await bootstrapSuperAdmin();
 
   if (withSeed) {
     await runFile("Seed data", "seed.sql");
