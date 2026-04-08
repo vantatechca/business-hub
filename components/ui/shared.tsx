@@ -96,11 +96,15 @@ export function ConfirmModal({ open, onClose, onConfirm, name, entity="item" }: 
 interface Toast { id:string; msg:string; type:"ok"|"er"|"wa"; }
 export function useToast() {
   const [ts,sts]=useState<Toast[]>([]);
-  const toast=(msg:string,type:"ok"|"er"|"wa"="ok")=>{
+  // IMPORTANT: toast MUST be stable across renders. If it changes every render,
+  // callers that put it in a useCallback/useEffect dep array (e.g. the checkin
+  // and department detail pages) will fire infinite loops of fetches and hit
+  // ERR_INSUFFICIENT_RESOURCES in the browser.
+  const toast = React.useCallback((msg:string,type:"ok"|"er"|"wa"="ok")=>{
     const id=Math.random().toString(36).slice(2);
     sts(p=>[...p,{id,msg,type}]);
     setTimeout(()=>sts(p=>p.filter(t=>t.id!==id)),3500);
-  };
+  }, []);
   return { ts, toast };
 }
 export function ToastList({ ts }: { ts:Toast[] }) {
