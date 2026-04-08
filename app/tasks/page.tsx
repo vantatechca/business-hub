@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Badge, Modal, FormField, HubInput, HubSelect, useToast, ToastList } from "@/components/ui/shared";
+import DueAlertBanner from "@/components/DueAlertBanner";
 import type { Task, Department, TeamMember } from "@/lib/types";
 import { formatTaskDueDate, isTaskDueTodayOrPast } from "@/lib/types";
 import {
@@ -308,6 +309,18 @@ export default function TasksPage() {
   return (
     <AppLayout title="Tasks" onNew={() => openAdd()} newLabel="Add Task">
       <ToastList ts={ts} />
+
+      <DueAlertBanner
+        items={tasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          dueDate: t.dueDate,
+          status: t.status,
+          departmentName: t.departmentName,
+        }))}
+        label="tasks"
+      />
+
       <div style={{ display:"flex", gap:10, marginBottom:14, alignItems:"center", flexWrap:"wrap" }}>
         <div style={{ flex:1, minWidth:200, display:"flex", alignItems:"center", gap:8, background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px" }}>
           <span style={{ color:"var(--text-muted)" }}>⌕</span>
