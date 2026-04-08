@@ -43,7 +43,7 @@ function daysFromTodayToBirthday(todayYmd: Date, bdayStr: string): number {
 export async function GET() {
   try {
     const rows = await sql`
-      SELECT id, name, birthday
+      SELECT id, name, birthday, is_active
       FROM users
       WHERE is_active = TRUE AND birthday IS NOT NULL
       ORDER BY name
@@ -54,12 +54,17 @@ export async function GET() {
     today.setHours(0, 0, 0, 0);
 
     const entries: BirthdayUser[] = [];
+    const diagnostics: { name: string; birthday: string | null; daysUntil: number | null }[] = [];
     for (const u of users) {
       const bdayStr = toDateString(u.birthday);
-      if (!bdayStr || !/^\d{4}-\d{2}-\d{2}$/.test(bdayStr)) continue;
+      if (!bdayStr || !/^\d{4}-\d{2}-\d{2}$/.test(bdayStr)) {
+        diagnostics.push({ name: u.name as string, birthday: bdayStr, daysUntil: null });
+        continue;
+      }
       const [bY, bM, bD] = bdayStr.split("-").map(Number);
       const diff = daysFromTodayToBirthday(today, bdayStr);
       const turningAge = today.getFullYear() - bY;
+      diagnostics.push({ name: u.name as string, birthday: bdayStr, daysUntil: diff });
       entries.push({
         userId: u.id as string,
         name: u.name as string,
@@ -74,6 +79,13 @@ export async function GET() {
     const todayList    = entries.filter(e => e.daysUntil === 0).sort((a, b) => a.name.localeCompare(b.name));
     const upcomingList = entries.filter(e => e.daysUntil > 0 && e.daysUntil <= 14).sort((a, b) => a.daysUntil - b.daysUntil);
     const recentList   = entries.filter(e => e.daysUntil < 0 && e.daysUntil >= -14).sort((a, b) => b.daysUntil - a.daysUntil);
+
+    console.log(`[birthdays/GET] ${users.length} active users with birthday; today=${todayList.length}, upcoming=${upcomingList.length}, recent=${recentList.length}`);
+    if (users.length > 0 && todayList.length + upcomingList.length + recentList.length === 0) {
+      // All birthdays are outside the window — log the full computed list
+      // so we can see what went wrong from Render logs.
+      console.log("[birthdays/GET] computed:", JSON.stringify(diagnostics));
+    }
 
     return NextResponse.json({
       today: todayList,

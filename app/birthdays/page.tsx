@@ -63,20 +63,30 @@ export default function BirthdaysPage() {
   const dismiss = (uid: string, name: string) => {
     localStorage.setItem(dismissedKey(uid, year), "1");
     setTick(t => t + 1);
-    toast(`Dismissed ${name}'s missed birthday`, "wa");
+    toast(`Moved ${name}'s birthday to Past`, "wa");
+  };
+  const undismiss = (uid: string, name: string) => {
+    localStorage.removeItem(dismissedKey(uid, year));
+    setTick(t => t + 1);
+    toast(`Moved ${name}'s birthday back to Missed`, "wa");
   };
   void tick; // used to trigger re-renders
 
-  // Filter out already-greeted (today) and already-greeted-or-dismissed (recent)
+  // Today = ungreeted today-birthdays
   const visibleToday = (data?.today ?? []).filter(u => !isMarked(u.userId, year).greeted);
   const greetedToday = (data?.today ?? []).filter(u => isMarked(u.userId, year).greeted);
+  // Missed = last-14-days birthdays that haven't been greeted or dismissed
   const visibleRecent = (data?.recent ?? []).filter(u => {
     const m = isMarked(u.userId, year);
     return !m.greeted && !m.dismissed;
   });
-  // Combined list of everyone marked as greeted (today + recent-missed), newest
-  // first. Shown at the bottom of the page so users still see who they've
-  // already acknowledged and can unmark by mistake.
+  // Past = last-14-days birthdays that the user dismissed (separate from greeted)
+  const pastList = (data?.recent ?? []).filter(u => {
+    const m = isMarked(u.userId, year);
+    return m.dismissed && !m.greeted;
+  }).sort((a, b) => b.daysUntil - a.daysUntil);
+  // Greeted = anyone marked greeted (today or recent). Shown so the user can
+  // see who they've already acknowledged and undo if needed.
   const greetedList = [
     ...greetedToday,
     ...(data?.recent ?? []).filter(u => isMarked(u.userId, year).greeted),
@@ -163,6 +173,31 @@ export default function BirthdaysPage() {
             )}
           </Section>
 
+          {/* Past — birthdays the user explicitly dismissed from Missed.
+              Kept visible so they can "Move back" (undismiss) if needed. */}
+          <Section title="Past · Dismissed" count={pastList.length} icon="🗂" accent="var(--text-secondary)">
+            {pastList.length === 0 ? (
+              <div style={{ padding: "16px 0", color: "var(--text-muted)", fontSize: 12 }}>
+                No dismissed birthdays.
+              </div>
+            ) : (
+              <CardGrid>
+                {pastList.map(u => (
+                  <BirthdayCard key={u.userId} u={u} variant="past">
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <ActionButton color="var(--success)" icon={<CheckCircle2 size={13} />} onClick={() => markGreeted(u.userId, u.name)}>
+                        Mark as greeted
+                      </ActionButton>
+                      <ActionButton color="var(--text-secondary)" icon={<X size={13} />} onClick={() => undismiss(u.userId, u.name)}>
+                        Move back to Missed
+                      </ActionButton>
+                    </div>
+                  </BirthdayCard>
+                ))}
+              </CardGrid>
+            )}
+          </Section>
+
           {/* Greeted — everyone already acknowledged this year. Shown so
               users can still see who they've greeted and unmark if needed. */}
           <Section title="Greeted" count={greetedList.length} icon="✅" accent="var(--success)">
@@ -208,11 +243,12 @@ function CardGrid({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 }}>{children}</div>;
 }
 
-function BirthdayCard({ u, variant, children }: { u: BirthdayUser; variant: "today" | "upcoming" | "missed" | "greeted"; children?: React.ReactNode }) {
+function BirthdayCard({ u, variant, children }: { u: BirthdayUser; variant: "today" | "upcoming" | "missed" | "greeted" | "past"; children?: React.ReactNode }) {
   const accent =
     variant === "today"    ? "var(--accent)"  :
     variant === "upcoming" ? "var(--warning)" :
     variant === "greeted"  ? "var(--success)" :
+    variant === "past"     ? "var(--text-muted)" :
     "var(--danger)";
   const subtitle =
     variant === "today"    ? "Today!" :
@@ -221,6 +257,8 @@ function BirthdayCard({ u, variant, children }: { u: BirthdayUser; variant: "tod
       ? (u.daysUntil === 0
           ? "✓ Greeted today"
           : `✓ Greeted · ${Math.abs(u.daysUntil)} day${Math.abs(u.daysUntil) === 1 ? "" : "s"} ago`)
+      : variant === "past"
+      ? `Dismissed · ${Math.abs(u.daysUntil)} day${Math.abs(u.daysUntil) === 1 ? "" : "s"} ago`
       : `${Math.abs(u.daysUntil)} day${Math.abs(u.daysUntil) === 1 ? "" : "s"} ago`;
   return (
     <Card>
