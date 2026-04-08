@@ -63,10 +63,10 @@ export default function TeamPage() {
   const myId = (session?.user as { id?: string })?.id;
   const isAdmin = myRole === "admin" || myRole === "super_admin";
   const isSuperAdmin = myRole === "super_admin";
-  // "Mark In" toggles a teammate's daily check-in. Manager / admin / super
-  // admin can flip it; lead and member can't (the button is hidden + the
-  // API enforces the same rule).
-  const canMarkIn = myRole === "manager" || isAdmin;
+  // Lead and member shouldn't see other people's role / status — only
+  // their job title and department membership. Hide both columns
+  // entirely for those roles. Manager+ keeps the full view.
+  const canSeeRoleAndStatus = myRole === "manager" || myRole === "leader" || isAdmin;
   // Profile drawer opens for anyone above lead. Lead still gets a click that
   // shows a minimal read-only card (the drawer handles the minimal branch).
   const canOpenProfileDrawer = myRole !== "member";
@@ -211,15 +211,6 @@ export default function TeamPage() {
     toast("Member deleted", "wa");
   };
 
-  const toggleCI = async (m: TeamMember) => {
-    await fetch(`/api/team/${m.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ checkedInToday: !m.checkedInToday }),
-    });
-    setTeam(p => p.map(x => (String(x.id) === String(m.id) ? { ...x, checkedInToday: !x.checkedInToday } : x)));
-  };
-
   // Reusable form JSX (NOT a component — defining as a value keeps inputs
   // focus-safe across re-renders).
   const memberForm = (
@@ -325,7 +316,16 @@ export default function TeamPage() {
         <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="hub-table">
             <thead>
-              <tr>{(canMarkIn ? ["Member", "Job Title", "Role", "Departments", "Status", "Check-In", ""] : ["Member", "Job Title", "Role", "Departments", "Status", ""]).map(h => <th key={h}>{h}</th>)}</tr>
+              {(() => {
+                // Build the header list dynamically so we can drop the
+                // Role and Status columns for lead / member viewers.
+                const headers: string[] = ["Member", "Job Title"];
+                if (canSeeRoleAndStatus) headers.push("Role");
+                headers.push("Departments");
+                if (canSeeRoleAndStatus) headers.push("Status");
+                headers.push(""); // actions cell
+                return <tr>{headers.map(h => <th key={h || "actions"}>{h}</th>)}</tr>;
+              })()}
             </thead>
             <tbody>
               {rows.map(m => (
@@ -348,11 +348,13 @@ export default function TeamPage() {
                     </div>
                   </td>
                   <td onClick={() => openDrawer(m)} style={{ fontSize: 12, color: "var(--text-secondary)" }}>{m.jobTitle ?? "—"}</td>
-                  <td onClick={() => openDrawer(m)}>
-                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, fontWeight: 700, textTransform: "capitalize", background: ROLE_BG[m.role] ?? "var(--accent-bg)", color: ROLE_FG[m.role] ?? "var(--accent)" }}>
-                      {m.role === "super_admin" ? "Super Admin" : m.role.replace("_", " ")}
-                    </span>
-                  </td>
+                  {canSeeRoleAndStatus && (
+                    <td onClick={() => openDrawer(m)}>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, fontWeight: 700, textTransform: "capitalize", background: ROLE_BG[m.role] ?? "var(--accent-bg)", color: ROLE_FG[m.role] ?? "var(--accent)" }}>
+                        {m.role === "super_admin" ? "Super Admin" : m.role.replace("_", " ")}
+                      </span>
+                    </td>
+                  )}
                   <td onClick={() => openDrawer(m)}>
                     {(m.departments && m.departments.length > 0) ? (
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", maxWidth: 220 }}>
@@ -364,20 +366,12 @@ export default function TeamPage() {
                       </div>
                     ) : <span style={{ fontSize: 12, color: "var(--text-muted)" }}>—</span>}
                   </td>
-                  <td onClick={() => openDrawer(m)}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: SCOL[m.status] }} />
-                      <span style={{ fontSize: 11, color: SCOL[m.status], fontWeight: 600, textTransform: "capitalize" }}>{m.status}</span>
-                    </div>
-                  </td>
-                  {canMarkIn && (
-                    <td onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => toggleCI(m)}
-                        style={{ padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, background: m.checkedInToday ? "var(--success-bg)" : "var(--bg-input)", color: m.checkedInToday ? "var(--success)" : "var(--text-secondary)" }}
-                      >
-                        {m.checkedInToday ? "✓ Done" : "Mark In"}
-                      </button>
+                  {canSeeRoleAndStatus && (
+                    <td onClick={() => openDrawer(m)}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: SCOL[m.status] }} />
+                        <span style={{ fontSize: 11, color: SCOL[m.status], fontWeight: 600, textTransform: "capitalize" }}>{m.status}</span>
+                      </div>
                     </td>
                   )}
                   <td onClick={e => e.stopPropagation()}>
