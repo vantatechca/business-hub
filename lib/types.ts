@@ -197,6 +197,7 @@ export interface Goal {
 export interface RevenueEntry {
   id: string;
   amount: number;
+  currency?: string;
   departmentId?: string | null;
   departmentName?: string;
   description: string;
@@ -206,6 +207,7 @@ export interface RevenueEntry {
 export interface ExpenseEntry {
   id: string;
   amount: number;
+  currency?: string;
   departmentId?: string | null;
   departmentName?: string;
   description: string;

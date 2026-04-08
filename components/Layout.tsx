@@ -7,6 +7,8 @@ import { signOut, useSession } from "next-auth/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { LayoutDashboard, TrendingUp, Layers, Users, CheckSquare, Calendar, DollarSign, CreditCard, Target, LogOut, Zap, Bell, Search, Plus, Check, BarChart2, UserCog, Link2, Cake } from "lucide-react";
 import { Avatar } from "./ui/shared";
+import { useCurrency } from "@/lib/CurrencyContext";
+import { CURRENCIES } from "@/lib/currency";
 
 const NAV = [
   { s:"MAIN", items:[
@@ -38,8 +40,10 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { data: session } = useSession();
+  const { currency: globalCurrency, setCurrency: setGlobalCurrency } = useCurrency();
   const [col, setCol]       = useState(false);
   const [showN, setShowN]   = useState(false);
+  const [showCur, setShowCur] = useState(false);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -119,6 +123,58 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
             <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--bg-input)",border:"1px solid var(--border-card)",borderRadius:"var(--radius-md)",padding:"6px 10px",width:160}}>
               <Search size={12} style={{color:"var(--text-muted)",flexShrink:0}}/>
               <input placeholder="Search..." style={{border:"none",background:"transparent",outline:"none",fontSize:12,color:"var(--text-primary)",width:"100%"}}/>
+            </div>
+            <div style={{position:"relative"}}>
+              <button
+                onClick={() => setShowCur(v => !v)}
+                aria-label="Switch currency"
+                title="Global display currency"
+                style={{
+                  height: 34, padding: "0 10px", borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border-card)", background: "transparent",
+                  display: "flex", alignItems: "center", gap: 4, cursor: "pointer",
+                  color: "var(--text-primary)", fontSize: 11, fontWeight: 700,
+                }}
+              >
+                <DollarSign size={13} style={{ color: "var(--text-muted)" }} />
+                {globalCurrency}
+              </button>
+              {showCur && (
+                <div
+                  style={{
+                    position: "absolute", right: 0, top: "calc(100% + 8px)", width: 200,
+                    background: "var(--bg-card)", border: "1px solid var(--border-card)",
+                    borderRadius: "var(--radius-xl)", boxShadow: "var(--shadow-dropdown)",
+                    zIndex: 300, overflow: "hidden",
+                  }}
+                  className="animate-slide-up"
+                >
+                  <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--border-divider)", fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
+                    Global currency
+                  </div>
+                  <div style={{ padding: "8px 14px", fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                    Applied across the whole site. Revenue and Expenses pages can also override per-page.
+                  </div>
+                  {CURRENCIES.map(c => (
+                    <button
+                      key={c}
+                      onClick={() => { setGlobalCurrency(c); setShowCur(false); }}
+                      style={{
+                        width: "100%", padding: "11px 14px",
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        background: "transparent", border: "none",
+                        borderTop: "1px solid var(--border-divider)",
+                        cursor: "pointer",
+                        fontSize: 12, fontWeight: 600,
+                        color: globalCurrency === c ? "var(--accent)" : "var(--text-primary)",
+                      }}
+                    >
+                      <span>{c}</span>
+                      {globalCurrency === c && <Check size={14} color="var(--accent)" />}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={{position:"relative"}}>
               <button onClick={()=>setShowN(v=>!v)} aria-label="Notifications" style={{width:34,height:34,borderRadius:"var(--radius-md)",border:"1px solid var(--border-card)",background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"var(--text-secondary)",position:"relative"}}>

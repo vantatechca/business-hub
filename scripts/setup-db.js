@@ -199,6 +199,11 @@ async function runAdditiveMigrations() {
       year          INTEGER,
       created_at    TIMESTAMP DEFAULT NOW()
     )`,
+
+    // Per-entry currency. USD is the canonical storage currency; the UI
+    // converts at render time when the user switches global currency.
+    `ALTER TABLE revenue_entries ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'`,
+    `ALTER TABLE expense_entries ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'`,
   ];
 
   let ok = 0;
