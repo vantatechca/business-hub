@@ -3,12 +3,9 @@ import { useState, useEffect } from "react";
 import AppLayout from "@/components/Layout";
 import CheckInModal from "@/components/CheckInModal";
 import { Avatar, Card, useToast, ToastList } from "@/components/ui/shared";
-import { useSession } from "next-auth/react";
 import type { TeamMember } from "@/lib/types";
 
 export default function CheckInPage() {
-  const { data: session } = useSession();
-  const role = (session?.user as { role?: string })?.role ?? "member";
   const [team, setTeam]       = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);

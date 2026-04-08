@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
 
 // ── TOKENS ────────────────────────────────────────────────────
@@ -53,8 +53,7 @@ export function Badge({ children, bg, color }: { children:React.ReactNode; bg:st
 
 // ── CARD ──────────────────────────────────────────────────────
 export function Card({ children, className="", onClick, p=18 }: { children:React.ReactNode; className?:string; onClick?:()=>void; p?:number }) {
-  const [hov,sh]=useState(false);
-  return <div onClick={onClick} onMouseEnter={()=>sh(true)} onMouseLeave={()=>sh(false)} className={`hub-card ${onClick?"hub-card-hover cursor-pointer":""} ${className}`} style={{padding:p}}>{children}</div>;
+  return <div onClick={onClick} className={`hub-card ${onClick?"hub-card-hover cursor-pointer":""} ${className}`} style={{padding:p}}>{children}</div>;
 }
 
 // ── FORM FIELD ────────────────────────────────────────────────
@@ -110,8 +109,6 @@ export function ToastList({ ts }: { ts:Toast[] }) {
 export function EmptyState({ icon="📭", title, desc, action }: { icon?:string; title:string; desc?:string; action?:React.ReactNode }) {
   return <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"48px 0",textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>{icon}</div><div style={{fontSize:14,fontWeight:700,color:"var(--text-primary)",marginBottom:6}}>{title}</div>{desc&&<div style={{fontSize:12,color:"var(--text-secondary)",marginBottom:16,maxWidth:280}}>{desc}</div>}{action}</div>;
 }
-
-// ── RE-EXPORTS from lib/types (so pages can import from one place) ───
 
 // ── RE-EXPORTS from lib/types (for convenience) ─────────────────────────────
 export { priorityColor, priorityLabel, formatMetricValue, getInitials, metricDelta, healthColor } from "@/lib/types";

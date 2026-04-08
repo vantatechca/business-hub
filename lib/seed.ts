@@ -81,12 +81,21 @@ export let expenseEntries = [
   { id:5, amount:149000, departmentId:11, departmentName:"Revenue",  description:"Year-end costs",     month:"Dec", year:2024 },
 ];
 
-export let notifications: Array<{ id:number; msg:string; message?:string; time:string; read:boolean; type:string; }> = [
-  { id:1, type:"checkin",  msg:"10 members haven't checked in today",   message:"10 members haven't checked in today",  time:"2h ago",  read:false, createdAt: new Date(Date.now()-7200000).toISOString() } as any,
-  { id:2, type:"alert",    msg:"GMC banned count at 85 — needs attention", message:"GMC banned count at 85 — needs attention", time:"3h ago",  read:false, createdAt: new Date(Date.now()-10800000).toISOString() } as any,
-  { id:3, type:"system",   msg:"Gmail accounts: 250/4000 target (6.3%)",   message:"Gmail accounts: 250/4000 target (6.3%)",   time:"5h ago",  read:true,  createdAt: new Date(Date.now()-18000000).toISOString() } as any,
-  { id:4, type:"checkin",  msg:"Tristan hasn't submitted today's check-in", message:"Tristan hasn't submitted today's check-in", time:"1h ago",  read:false, createdAt: new Date(Date.now()-3600000).toISOString() } as any,
-  { id:5, type:"system",   msg:"Phase 1 migration ready — run setup-db.js", message:"Phase 1 migration ready — run setup-db.js", time:"now",     read:false, createdAt: new Date().toISOString() } as any,
+export interface SeedNotification {
+  id: number;
+  type: string;
+  message: string;
+  time: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export let notifications: SeedNotification[] = [
+  { id:1, type:"checkin", message:"10 members haven't checked in today",   time:"2h ago", read:false, createdAt: new Date(Date.now()-7200000).toISOString() },
+  { id:2, type:"alert",   message:"GMC banned count at 85 — needs attention", time:"3h ago", read:false, createdAt: new Date(Date.now()-10800000).toISOString() },
+  { id:3, type:"system",  message:"Gmail accounts: 250/4000 target (6.3%)",   time:"5h ago", read:true,  createdAt: new Date(Date.now()-18000000).toISOString() },
+  { id:4, type:"checkin", message:"Tristan hasn't submitted today's check-in", time:"1h ago", read:false, createdAt: new Date(Date.now()-3600000).toISOString() },
+  { id:5, type:"system",  message:"Phase 1 migration ready — run setup-db.js", time:"now",    read:false, createdAt: new Date().toISOString() },
 ];
 
 let _id = 1000;

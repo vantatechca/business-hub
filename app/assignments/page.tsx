@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/Layout";
-import { Avatar, Card, Modal, FormField, HubSelect, useToast, ToastList, EmptyState, priorityColor, priorityLabel } from "@/components/ui/shared";
+import { Avatar, Modal, FormField, HubSelect, useToast, ToastList, priorityColor } from "@/components/ui/shared";
 import type { Metric, User, MetricAssignment } from "@/lib/types";
 import { getInitials } from "@/lib/types";
 

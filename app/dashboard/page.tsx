@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import CheckInGate from "@/components/CheckInGate";
 import AppLayout from "@/components/Layout";
-import { Card, Avatar, Sparkline, ProgressBar, Badge, formatMetricValue, healthColor, useToast, ToastList } from "@/components/ui/shared";
+import { Card, Avatar, Sparkline, ProgressBar, Badge, formatMetricValue, useToast, ToastList } from "@/components/ui/shared";
 import { priorityColor, priorityLabel } from "@/lib/types";
 import type { Department, Metric } from "@/lib/types";
 import type { RevenueEntry, ExpenseEntry, Goal, Task } from "@/lib/types";
@@ -14,8 +14,6 @@ const PR: Record<string,{l:string;bg:string;c:string}> = {
   low:   {l:"Low",   bg:"rgba(52,211,153,.15)", c:"#34d399"},
 };
 
-const TMMD = new Date().toISOString().slice(5,10);
-
 export default function DashboardPage() {
   const [depts,   setDepts]   = useState<Department[]>([]);
   const [metrics, setMetrics] = useState<Metric[]>([]);
@@ -25,7 +23,7 @@ export default function DashboardPage() {
   const [exp,     setExp]     = useState<ExpenseEntry[]>([]);
   const [ciStatus,setCiStatus]= useState<{missing:string[];rate:number}>({missing:[],rate:0});
   const [loading, setLoading] = useState(true);
-  const { ts, toast } = useToast();
+  const { ts } = useToast();
 
   useEffect(()=>{
     Promise.all([
@@ -56,9 +54,6 @@ export default function DashboardPage() {
     {label:"Check-In Rate",  value:ciStatus.rate, prev:72, format:"percent" as const, color:"#5b8ef8", spark:[70,72,68,75,78,74,80,83,85,ciStatus.rate]},
   ];
 
-  // Monthly chart
-  const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const activeMonths = MONTHS.filter(m=>rev.some(r=>r.month===m)||exp.some(e=>e.month===m));
   const Sk=()=><div className="skeleton" style={{height:80,borderRadius:12}}/>;
 
   return (

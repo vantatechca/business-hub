@@ -13,7 +13,7 @@ export async function GET() {
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
   } catch {
     // DB not configured — use seed data
-    return NextResponse.json({ data: seedNotifs.map(n => ({ ...n, message: n.msg ?? n.message, read: n.read })).reverse() });
+    return NextResponse.json({ data: [...seedNotifs].reverse() });
   }
 }
 

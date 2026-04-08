@@ -26,7 +26,6 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ]           = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  const [defStatus, setDefStatus] = useState("todo");
   const [form, setForm]     = useState<typeof blank>({ ...blank });
   const { ts, toast }       = useToast();
 
@@ -39,7 +38,6 @@ export default function TasksPage() {
   const ft = tasks.filter(t => t.title.toLowerCase().includes(q.toLowerCase()));
 
   const openAdd = (status = "todo") => {
-    setDefStatus(status);
     setForm({ ...blank, status, departmentId: String(depts[0]?.id ?? ""), departmentName: depts[0]?.name ?? "" });
     setShowAdd(true);
   };
