@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { signOut, useSession } from "next-auth/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { LayoutDashboard, TrendingUp, Layers, Users, CheckSquare, Calendar, DollarSign, CreditCard, Target, LogOut, Zap, Bell, Search, Plus, Check, BarChart2, UserCog, Link2, Cake, User as UserIcon, FileText, X, Send, AlertTriangle, AlertCircle } from "lucide-react";
+import { LayoutDashboard, TrendingUp, Layers, Users, CheckSquare, Calendar, DollarSign, CreditCard, Target, LogOut, Zap, Bell, Search, Plus, Check, BarChart2, UserCog, Link2, Cake, FileText, X, Send, AlertTriangle, AlertCircle } from "lucide-react";
 import { Avatar } from "./ui/shared";
 import { useCurrency } from "@/lib/CurrencyContext";
 import { CURRENCIES } from "@/lib/currency";
@@ -16,7 +16,6 @@ const NAV = [
   { s:"MAIN", items:[
     {id:"dashboard",l:"Dashboard",h:"/dashboard",I:LayoutDashboard},
     {id:"analytics",l:"Analytics",h:"/analytics",I:TrendingUp},
-    {id:"profile",l:"My Profile",h:"/profile",I:UserIcon},
   ]},
   { s:"OPERATIONS", items:[
     {id:"departments",l:"Departments",h:"/departments",I:Layers},
