@@ -32,11 +32,17 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const b = await req.json();
+  // The form sends "head" as the department description, plus an optional
+  // "notes" textarea (which replaces the old health field). description and
+  // notes are stored as separate columns: description is the short tagline
+  // shown on the card, notes is the long-form content shown on detail pages.
+  const description = b.description ?? b.head ?? null;
   try {
     const rows = await sql`
-      INSERT INTO departments (name, slug, color, icon, priority_score, google_sheet_url, description, sort_order)
+      INSERT INTO departments (name, slug, color, icon, priority_score, google_sheet_url, description, notes, sort_order)
       VALUES (${b.name}, ${b.slug ?? b.name.toLowerCase().replace(/\s+/g,"-")}, ${b.color ?? "#5b8ef8"},
-              ${b.icon ?? "📦"}, ${b.priorityScore ?? 50}, ${b.googleSheetUrl ?? null}, ${b.description ?? null}, ${b.sortOrder ?? 99})
+              ${b.icon ?? "📦"}, ${b.priorityScore ?? 50}, ${b.googleSheetUrl ?? null}, ${description},
+              ${b.notes ?? null}, ${b.sortOrder ?? 99})
       RETURNING *
     `;
     return NextResponse.json({ data: rows[0] }, { status: 201 });

@@ -485,7 +485,9 @@ function TaskCardBody({
         {t.departmentName || <span style={{ color:"var(--text-muted)", fontStyle:"italic" }}>No department</span>} · <span style={{ color: isTaskDueTodayOrPast(t.dueDate) ? "var(--danger)" : "var(--text-secondary)" }}>⏱ {formatTaskDueDate(t.dueDate)}</span>
       </div>
       {onAdvance && onDelete && (
-        <div style={{ display:"flex", gap:6 }}>
+        // Stop pointer-down so a click on Advance/Edit/Delete inside the
+        // draggable card doesn't initiate a drag.
+        <div style={{ display:"flex", gap:6 }} onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
           <button onClick={onAdvance} style={{ flex:1, padding:"5px 7px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>{NL[t.status]}</button>
           {onEdit && <button onClick={onEdit} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>}
           <button onClick={onDelete} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
@@ -516,20 +518,28 @@ function TaskCard({
     transition,
     opacity: isDragging ? 0.25 : 1,
     visibility: isDragging ? "hidden" : "visible",
+    cursor: dragEnabled ? "grab" : undefined,
+    touchAction: dragEnabled ? "none" : undefined,
   };
+  // Subtle grip in the corner as a visual cue. The whole card is draggable
+  // because we spread listeners on the outer wrapper — dnd-kit's 5px
+  // activation distance keeps the click-to-edit / advance buttons working.
   const handle = dragEnabled ? (
-    <button
-      {...attributes}
-      {...listeners}
-      aria-label="Drag"
-      style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"grab", padding:0, touchAction:"none", display:"flex" }}
-      onClick={e => e.stopPropagation()}
+    <span
+      aria-hidden
+      style={{ color: "var(--text-muted)", display: "flex", opacity: 0.45 }}
     >
       <GripVertical size={14} />
-    </button>
+    </span>
   ) : undefined;
   return (
-    <div ref={setNodeRef} style={style} className="hub-card">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="hub-card"
+      {...(dragEnabled ? listeners : {})}
+      {...(dragEnabled ? attributes : {})}
+    >
       <TaskCardBody t={t} dragHandle={handle} onAdvance={onAdvance} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
