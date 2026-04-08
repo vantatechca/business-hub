@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sql, rowsToCamel } from "@/lib/db";
+import { sql, rowsToCamel, toDateString } from "@/lib/db";
 import { getInitials } from "@/lib/types";
 
 // GET /api/birthdays
@@ -55,9 +55,8 @@ export async function GET() {
 
     const entries: BirthdayUser[] = [];
     for (const u of users) {
-      if (!u.birthday) continue;
-      const bdayStr = String(u.birthday).slice(0, 10); // YYYY-MM-DD
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(bdayStr)) continue;
+      const bdayStr = toDateString(u.birthday);
+      if (!bdayStr || !/^\d{4}-\d{2}-\d{2}$/.test(bdayStr)) continue;
       const [bY, bM, bD] = bdayStr.split("-").map(Number);
       const diff = daysFromTodayToBirthday(today, bdayStr);
       const turningAge = today.getFullYear() - bY;

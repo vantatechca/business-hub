@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, rowsToCamel } from "@/lib/db";
+import { sql, rowsToCamel, toDateString } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { getInitials } from "@/lib/types";
 
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     const users = rowsToCamel<Record<string,unknown>>(rows as Record<string,unknown>[]).map(u => ({
       ...u,
       initials: getInitials(u.name as string),
-      birthday: u.birthday ? String(u.birthday).slice(0, 10) : null,
+      birthday: toDateString(u.birthday),
       checkedInToday: false,
     }));
     return NextResponse.json({ data: users });

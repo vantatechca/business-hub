@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sql, rowsToCamel } from "@/lib/db";
+import { sql, rowsToCamel, toDateString } from "@/lib/db";
 
 interface Notif {
   id: string | number;
@@ -20,7 +20,7 @@ async function birthdayNotifications(): Promise<Notif[]> {
     const out: Notif[] = [];
     for (const r of rows as Record<string, unknown>[]) {
       const name = r.name as string;
-      const bdayStr = r.birthday ? String(r.birthday).slice(0, 10) : null;
+      const bdayStr = toDateString(r.birthday);
       if (!bdayStr || !/^\d{4}-\d{2}-\d{2}$/.test(bdayStr)) continue;
       const [, m, d] = bdayStr.split("-").map(Number);
       const thisYear = new Date(today.getFullYear(), m - 1, d);
