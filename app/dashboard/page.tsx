@@ -81,6 +81,16 @@ export default function DashboardPage() {
       <AppLayout title="Dashboard">
         <ToastList ts={ts}/>
 
+        {/* Status bar — sits ABOVE the alerts banner so it's the first
+            thing in the main column after the page title. Only shows the
+            date + check-in rate; the Missing / Active tasks pieces moved
+            into the alert banner below and the KPI cards respectively. */}
+        <div style={{display:"flex",gap:12,alignItems:"center",fontSize:11,color:"var(--text-secondary)",marginBottom:12,flexWrap:"wrap"}}>
+          <span>{today}</span>
+          <span style={{color:"var(--text-muted)"}}>/</span>
+          <span>Check-ins: <strong style={{color:ciStatus.rate>=80?"var(--success)":ciStatus.rate>=50?"var(--warning)":"var(--danger)"}}>{ciStatus.rate}%</strong></span>
+        </div>
+
         {/* Top alerts — birthdays + missing check-ins */}
         {(unreviewedBdays.length > 0 || ciStatus.missing.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: unreviewedBdays.length > 0 && ciStatus.missing.length > 0 ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 14 }}>
@@ -171,19 +181,6 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
-
-        {/* Status bar */}
-        <div style={{display:"flex",gap:12,alignItems:"center",fontSize:11,color:"var(--text-secondary)",marginBottom:14,flexWrap:"wrap"}}>
-          <span>{today}</span>
-          <span style={{color:"var(--text-muted)"}}>/</span>
-          <span>Check-ins: <strong style={{color:ciStatus.rate>=80?"var(--success)":ciStatus.rate>=50?"var(--warning)":"var(--danger)"}}>{ciStatus.rate}%</strong></span>
-          {ciStatus.missing.length>0&&<>
-            <span style={{color:"var(--text-muted)"}}>/</span>
-            <span style={{color:"var(--danger)"}}>Missing: <strong>{ciStatus.missing.slice(0,3).join(", ")}{ciStatus.missing.length>3?` +${ciStatus.missing.length-3}`:""}</strong></span>
-          </>}
-          <span style={{color:"var(--text-muted)"}}>/</span>
-          <span>Active tasks: <strong style={{color:"var(--danger)"}}>{activeTasks}</strong></span>
-        </div>
 
         {/* KPI cards */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:11,marginBottom:14}}>
