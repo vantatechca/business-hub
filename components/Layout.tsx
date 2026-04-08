@@ -12,6 +12,8 @@ import { CURRENCIES } from "@/lib/currency";
 import SendAlertModal from "./SendAlertModal";
 import ReportIssueModal from "./ReportIssueModal";
 
+// `mgrOnly: true` hides the item from lead and member roles. The middleware
+// also blocks the matching route paths so a manual URL doesn't sneak in.
 const NAV = [
   { s:"MAIN", items:[
     {id:"dashboard",l:"Dashboard",h:"/dashboard",I:LayoutDashboard},
@@ -24,12 +26,12 @@ const NAV = [
     {id:"team",l:"Team",h:"/team",I:Users},
     {id:"tasks",l:"Tasks",h:"/tasks",I:ListChecks},
     {id:"checkin",l:"Check-Ins",h:"/checkin",I:CalendarCheck},
-    {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake},
+    {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake, mgrOnly:true},
   ]},
   { s:"FINANCE", items:[
-    {id:"revenue",l:"Revenue",h:"/revenue",I:DollarSign},
-    {id:"expenses",l:"Expenses",h:"/expenses",I:CreditCard},
-    {id:"goals",l:"Goals",h:"/goals",I:Target},
+    {id:"revenue",l:"Revenue",h:"/revenue",I:DollarSign, mgrOnly:true},
+    {id:"expenses",l:"Expenses",h:"/expenses",I:CreditCard, mgrOnly:true},
+    {id:"goals",l:"Goals",h:"/goals",I:Target, mgrOnly:true},
   ]},
   { s:"ADMIN", items:[
     {id:"users",l:"Users",h:"/users",I:Shield},
@@ -163,10 +165,17 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
               if (sect.s === "ADMIN" && role !== "admin" && role !== "super_admin") return null;
               // SYSTEM (audit log) is super_admin only
               if (sect.s === "SYSTEM" && role !== "super_admin") return null;
+              // Items flagged mgrOnly are hidden from lead and member roles.
+              // The whole section is hidden if every item in it is mgrOnly
+              // and the viewer can't see it (otherwise we'd render an empty
+              // section header with nothing under it — looks broken).
+              const isMgrOrUp = role === "manager" || role === "leader" || role === "admin" || role === "super_admin";
+              const visibleItems = sect.items.filter(it => !(it as { mgrOnly?: boolean }).mgrOnly || isMgrOrUp);
+              if (visibleItems.length === 0) return null;
               return (
                 <div key={sect.s} style={{marginBottom:2}}>
                   {!col&&<div style={{fontSize:9,fontWeight:800,color:"var(--text-muted)",padding:"10px 8px 4px",letterSpacing:".12em"}}>{sect.s}</div>}
-                  {sect.items.map(({id,l,h,I})=>{
+                  {visibleItems.map(({id,l,h,I})=>{
                     const active=pathname===h||pathname.startsWith(h+"/");
                     const btn=<Link key={id} href={h} aria-label={l} aria-current={active?"page":undefined} className={`nav-item ${active?"active":""} ${col?"justify-center":""}`} style={{marginBottom:2}}><I size={15} aria-hidden/>{!col&&<span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis"}}>{l}</span>}</Link>;
                     if(col) return <Tooltip.Root key={id}><Tooltip.Trigger asChild>{btn}</Tooltip.Trigger><Tooltip.Portal><Tooltip.Content side="right" sideOffset={8} style={{padding:"6px 12px",borderRadius:"var(--radius-md)",background:"var(--bg-card)",border:"1px solid var(--border-card)",fontSize:12,fontWeight:600,color:"var(--text-primary)",boxShadow:"var(--shadow-dropdown)",zIndex:600}}>{l}<Tooltip.Arrow style={{fill:"var(--border-card)"}}/></Tooltip.Content></Tooltip.Portal></Tooltip.Root>;

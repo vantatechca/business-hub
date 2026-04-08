@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, toCamel } from "@/lib/db";
+import { getSessionUser, isManagerOrHigher, getUserScope } from "@/lib/authz";
 
 // Look up a department by its id OR its slug. Uses id::text comparison so it
 // works for BOTH `id UUID` and `id TEXT` column shapes without blowing up on
@@ -18,6 +19,16 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   try {
     const row = await findDepartment(params.id);
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // Lead and member can only view departments they're a member of. Return
+    // 404 (not 403) for unauthorized viewers so the existence of the
+    // department isn't leaked.
+    const me = await getSessionUser();
+    if (me && !isManagerOrHigher(me.role)) {
+      const scope = await getUserScope(me.id);
+      if (!scope.departmentIds.includes(String(row.id))) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+    }
     return NextResponse.json({ data: toCamel(row) });
   } catch (e: unknown) {
     console.error("[departments/[id]/GET] error:", e);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, rowsToCamel } from "@/lib/db";
-import { getSessionUser, canSeeSuperAdmin } from "@/lib/authz";
+import { getSessionUser, canSeeSuperAdmin, isManagerOrHigher, getUserScope } from "@/lib/authz";
 
 export async function GET(req: NextRequest) {
   const me = await getSessionUser();
@@ -16,10 +16,26 @@ export async function GET(req: NextRequest) {
         : await sql`SELECT ma.*, u.name AS user_name, u.role AS user_role FROM metric_assignments ma JOIN users u ON u.id = ma.user_id WHERE ma.metric_id = ${metricId} AND u.role != 'super_admin' ORDER BY ma.role_in_metric`;
     } else if (userId) {
       rows = await sql`SELECT ma.*, m.name AS metric_name, d.name AS department_name FROM metric_assignments ma JOIN metrics m ON m.id = ma.metric_id JOIN departments d ON d.id = m.department_id WHERE ma.user_id = ${userId} ORDER BY m.priority_score DESC`;
-    } else {
+    } else if (!me || isManagerOrHigher(me.role)) {
       rows = includeSA
         ? await sql`SELECT ma.*, u.name AS user_name, m.name AS metric_name FROM metric_assignments ma JOIN users u ON u.id = ma.user_id JOIN metrics m ON m.id = ma.metric_id`
         : await sql`SELECT ma.*, u.name AS user_name, m.name AS metric_name FROM metric_assignments ma JOIN users u ON u.id = ma.user_id JOIN metrics m ON m.id = ma.metric_id WHERE u.role != 'super_admin'`;
+    } else {
+      // Lead and member: assignments where THEY are the assignee, OR
+      // assignments for any metric in a department they belong to (any
+      // role_in_dept). Same OR-shape as the tasks / metrics filters.
+      const scope = await getUserScope(me.id);
+      rows = await sql`
+        SELECT ma.*, u.name AS user_name, m.name AS metric_name
+        FROM metric_assignments ma
+        JOIN users u ON u.id = ma.user_id
+        JOIN metrics m ON m.id = ma.metric_id
+        WHERE u.role != 'super_admin'
+          AND (
+            ma.user_id = ${me.id}
+            OR m.department_id::text = ANY(${scope.departmentIds}::text[])
+          )
+      `;
     }
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
   } catch { return NextResponse.json({ error: "DB not configured" }, { status: 503 }); }

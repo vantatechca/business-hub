@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, rowsToCamel } from "@/lib/db";
+import { getSessionUser, isManagerOrHigher, getUserScope } from "@/lib/authz";
 
 export async function GET() {
   try {
@@ -10,19 +11,44 @@ export async function GET() {
     // member_count comes from the user_departments junction table now —
     // members and team leads are equally counted, and the legacy
     // users.department_id column is no longer authoritative.
-    const rows = await sql`
-      SELECT d.*,
-        (SELECT COUNT(*)::int FROM metrics m WHERE m.department_id::text = d.id::text) AS metric_count,
-        (SELECT COUNT(*)::int
-           FROM user_departments ud
-           JOIN users u ON u.id = ud.user_id
-           WHERE ud.department_id::text = d.id::text
-             AND u.is_active = TRUE
-             AND u.role != 'super_admin') AS member_count,
-        (SELECT COUNT(*)::int FROM tasks t WHERE t.department_id::text = d.id::text) AS task_count
-      FROM departments d
-      ORDER BY d.sort_order ASC, d.priority_score DESC
-    `;
+    //
+    // Lead and member only see departments they're a member of (any
+    // role_in_dept). Manager+ sees everything.
+    const me = await getSessionUser();
+    let rows: Record<string, unknown>[] = [];
+    if (!me) {
+      rows = [];
+    } else if (isManagerOrHigher(me.role)) {
+      rows = await sql`
+        SELECT d.*,
+          (SELECT COUNT(*)::int FROM metrics m WHERE m.department_id::text = d.id::text) AS metric_count,
+          (SELECT COUNT(*)::int
+             FROM user_departments ud
+             JOIN users u ON u.id = ud.user_id
+             WHERE ud.department_id::text = d.id::text
+               AND u.is_active = TRUE
+               AND u.role != 'super_admin') AS member_count,
+          (SELECT COUNT(*)::int FROM tasks t WHERE t.department_id::text = d.id::text) AS task_count
+        FROM departments d
+        ORDER BY d.sort_order ASC, d.priority_score DESC
+      `;
+    } else {
+      const scope = await getUserScope(me.id);
+      rows = await sql`
+        SELECT d.*,
+          (SELECT COUNT(*)::int FROM metrics m WHERE m.department_id::text = d.id::text) AS metric_count,
+          (SELECT COUNT(*)::int
+             FROM user_departments ud
+             JOIN users u ON u.id = ud.user_id
+             WHERE ud.department_id::text = d.id::text
+               AND u.is_active = TRUE
+               AND u.role != 'super_admin') AS member_count,
+          (SELECT COUNT(*)::int FROM tasks t WHERE t.department_id::text = d.id::text) AS task_count
+        FROM departments d
+        WHERE d.id::text = ANY(${scope.departmentIds}::text[])
+        ORDER BY d.sort_order ASC, d.priority_score DESC
+      `;
+    }
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
   } catch (e) {
     console.error("[departments/GET] error:", e);

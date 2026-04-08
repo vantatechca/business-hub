@@ -98,3 +98,37 @@ export async function requireSuperAdmin(): Promise<NextResponse | null> {
 export function canSeeSuperAdmin(role: string | undefined | null): boolean {
   return isSuperAdmin(role);
 }
+
+// ── PER-USER VISIBILITY SCOPE ──────────────────────────────────
+// Lead and Member roles only see items they have a relationship to:
+//   - departments they belong to (any role_in_dept), via user_departments
+//   - metrics they're assigned to, via metric_assignments
+//
+// This helper bundles both lookups into a single round-trip and returns the
+// id arrays as plain strings, ready to drop into a Postgres ANY(...) clause.
+//
+// Manager / admin / super_admin don't need scoping — callers can short-circuit
+// with isManagerOrHigher(role) and skip this entirely.
+export interface UserScope {
+  departmentIds: string[];
+  metricIds: string[];
+}
+
+export async function getUserScope(userId: string): Promise<UserScope> {
+  // sql import is inline so the authz module stays tree-shakable in the
+  // client bundle (the predicates above are pure and have no DB dep).
+  const { sql } = await import("./db");
+  try {
+    const [deptRows, metricRows] = await Promise.all([
+      sql`SELECT department_id FROM user_departments WHERE user_id = ${userId}`,
+      sql`SELECT metric_id FROM metric_assignments WHERE user_id = ${userId}`,
+    ]);
+    return {
+      departmentIds: (deptRows as { department_id: string }[]).map(r => String(r.department_id)),
+      metricIds:     (metricRows as { metric_id: string }[]).map(r => String(r.metric_id)),
+    };
+  } catch (e) {
+    console.warn("[authz/getUserScope] failed:", (e as Error).message);
+    return { departmentIds: [], metricIds: [] };
+  }
+}

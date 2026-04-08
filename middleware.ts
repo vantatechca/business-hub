@@ -27,6 +27,14 @@ export default withAuth(
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
 
+    // Manager+ only routes. Lead and member don't see them in the nav, but
+    // a manual URL would still load the page without this guard.
+    const mgrOnlyPaths = ["/birthdays", "/revenue", "/expenses", "/goals"];
+    const isMgrOrUp = role === "manager" || role === "leader" || role === "admin" || role === "super_admin";
+    if (!isMgrOrUp && mgrOnlyPaths.some(p => path === p || path.startsWith(p + "/"))) {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+
     return NextResponse.next();
   },
   {
