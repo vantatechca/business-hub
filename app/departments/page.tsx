@@ -230,9 +230,14 @@ export default function DepartmentsPage() {
 function DeptCardBody({
   d,
   showGrip,
+  actions,
 }: {
   d: Department;
   showGrip?: boolean;
+  // Optional action slot rendered inside the card border, below the stat
+  // row. Wrapped here (rather than rendered as a sibling outside the card)
+  // so the buttons visually belong to the card as one unit.
+  actions?: React.ReactNode;
 }) {
   return (
     <div
@@ -282,13 +287,18 @@ function DeptCardBody({
         </div>
       </div>
 
-      {/* Inline stat row — light, no gray boxes. */}
+      {/* Stat row + compact actions on the same line. Actions float to the
+          right so the card stays one tidy unit instead of two stacked
+          panels. Stops propagation on the action wrapper so a button click
+          doesn't initiate a drag or navigate. */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 11, color: "var(--text-secondary)" }}>
         <span><strong style={{ color: "var(--text-primary)", fontWeight: 700 }}>{d.memberCount ?? 0}</strong> members</span>
         <span style={{ color: "var(--border-card)" }}>·</span>
         <span><strong style={{ color: "var(--text-primary)", fontWeight: 700 }}>{(d as unknown as { taskCount?: number }).taskCount ?? 0}</strong> tasks</span>
         <span style={{ color: "var(--border-card)" }}>·</span>
         <span><strong style={{ color: "var(--text-primary)", fontWeight: 700 }}>{d.metricCount ?? 0}</strong> metrics</span>
+        {actions && <div style={{ flex: 1 }} />}
+        {actions}
       </div>
 
       <style jsx>{`
@@ -326,6 +336,72 @@ function DeptCard({
     router.push(`/departments/${d.id}`);
   };
 
+  // Compact in-card actions: small ghost buttons that hover-fill to the
+  // accent / red. Pointer-down + click are stopped so a button press
+  // doesn't trigger a drag (5px activation) or the card navigate.
+  const actions = (
+    <div
+      style={{ display: "flex", gap: 6 }}
+      onClick={stop}
+      onPointerDown={e => e.stopPropagation()}
+    >
+      <button
+        onClick={onEdit}
+        style={{
+          padding: "3px 10px",
+          borderRadius: 6,
+          border: "1px solid var(--border-card)",
+          background: "transparent",
+          color: "var(--text-secondary)",
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: ".02em",
+          cursor: "pointer",
+          transition: "color .15s ease, border-color .15s ease, background .15s ease",
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.color = "var(--accent)";
+          e.currentTarget.style.borderColor = "var(--accent)";
+          e.currentTarget.style.background = "var(--accent-bg)";
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.color = "var(--text-secondary)";
+          e.currentTarget.style.borderColor = "var(--border-card)";
+          e.currentTarget.style.background = "transparent";
+        }}
+      >
+        Edit
+      </button>
+      <button
+        onClick={onDelete}
+        style={{
+          padding: "3px 10px",
+          borderRadius: 6,
+          border: "1px solid var(--border-card)",
+          background: "transparent",
+          color: "var(--text-muted)",
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: ".02em",
+          cursor: "pointer",
+          transition: "color .15s ease, border-color .15s ease, background .15s ease",
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.color = "var(--danger)";
+          e.currentTarget.style.borderColor = "rgba(220,38,38,.4)";
+          e.currentTarget.style.background = "var(--danger-bg)";
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.color = "var(--text-muted)";
+          e.currentTarget.style.borderColor = "var(--border-card)";
+          e.currentTarget.style.background = "transparent";
+        }}
+      >
+        Delete
+      </button>
+    </div>
+  );
+
   return (
     <div
       ref={dragEnabled ? setNodeRef : undefined}
@@ -337,64 +413,7 @@ function DeptCard({
       {...(dragEnabled ? attributes : {})}
       onClick={onCardClick}
     >
-      <DeptCardBody d={d} showGrip={dragEnabled} />
-      {/* Action row — outlined ghost buttons, lighter on the eye. Stops
-          propagation so a click on Edit/Delete doesn't drag or navigate. */}
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }} onClick={stop} onPointerDown={stop}>
-        <button
-          onClick={onEdit}
-          style={{
-            flex: 1,
-            padding: "7px 12px",
-            borderRadius: 8,
-            border: "1px solid var(--border-card)",
-            background: "transparent",
-            color: "var(--text-secondary)",
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "color .15s ease, border-color .15s ease, background .15s ease",
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.color = "var(--accent)";
-            e.currentTarget.style.borderColor = "var(--accent)";
-            e.currentTarget.style.background = "var(--accent-bg)";
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.color = "var(--text-secondary)";
-            e.currentTarget.style.borderColor = "var(--border-card)";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          Edit
-        </button>
-        <button
-          onClick={onDelete}
-          style={{
-            padding: "7px 12px",
-            borderRadius: 8,
-            border: "1px solid var(--border-card)",
-            background: "transparent",
-            color: "var(--text-muted)",
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "color .15s ease, border-color .15s ease, background .15s ease",
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.color = "var(--danger)";
-            e.currentTarget.style.borderColor = "rgba(220,38,38,.4)";
-            e.currentTarget.style.background = "var(--danger-bg)";
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.color = "var(--text-muted)";
-            e.currentTarget.style.borderColor = "var(--border-card)";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          Delete
-        </button>
-      </div>
+      <DeptCardBody d={d} showGrip={dragEnabled} actions={actions} />
     </div>
   );
 }
