@@ -1,35 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, rowsToCamel, toCamel } from "@/lib/db";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // In-memory fallback when DB not set up
 const memCheckins: Record<string, unknown>[] = [];
 
+// GET /api/checkin
+//   ?date=YYYY-MM-DD                         → all checkins for that single day
+//   ?userId=UUID&date=YYYY-MM-DD             → that user's checkin for that day (1)
+//   ?userId=UUID&from=YYYY-MM-DD&to=YYYY-MM-DD → that user's checkins in range
+//   ?from=YYYY-MM-DD&to=YYYY-MM-DD           → all checkins in range
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const userId = searchParams.get("userId");
-  const date   = searchParams.get("date") ?? new Date().toISOString().slice(0, 10);
+  const date   = searchParams.get("date");
+  const from   = searchParams.get("from");
+  const to     = searchParams.get("to");
+
+  // Demo / non-UUID users have no DB rows.
+  if (userId && !UUID_RE.test(userId)) return NextResponse.json({ data: [] });
 
   try {
-    const rows = userId
-      ? await sql`
-          SELECT dc.*, u.name AS user_name
-          FROM daily_checkins dc
-          JOIN users u ON u.id = dc.user_id
-          WHERE dc.user_id = ${userId} AND dc.checkin_date = ${date}
-          ORDER BY dc.created_at DESC LIMIT 1
-        `
-      : await sql`
-          SELECT dc.*, u.name AS user_name
-          FROM daily_checkins dc
-          JOIN users u ON u.id = dc.user_id
-          WHERE dc.checkin_date = ${date}
-          ORDER BY dc.created_at DESC
-        `;
+    let rows;
+    if (userId && from && to) {
+      rows = await sql`
+        SELECT dc.*, u.name AS user_name
+        FROM daily_checkins dc
+        JOIN users u ON u.id = dc.user_id
+        WHERE dc.user_id = ${userId} AND dc.checkin_date BETWEEN ${from} AND ${to}
+        ORDER BY dc.checkin_date DESC
+      `;
+    } else if (from && to) {
+      rows = await sql`
+        SELECT dc.*, u.name AS user_name
+        FROM daily_checkins dc
+        JOIN users u ON u.id = dc.user_id
+        WHERE dc.checkin_date BETWEEN ${from} AND ${to}
+        ORDER BY dc.checkin_date DESC, dc.created_at DESC
+      `;
+    } else if (userId) {
+      const targetDate = date ?? new Date().toISOString().slice(0, 10);
+      rows = await sql`
+        SELECT dc.*, u.name AS user_name
+        FROM daily_checkins dc
+        JOIN users u ON u.id = dc.user_id
+        WHERE dc.user_id = ${userId} AND dc.checkin_date = ${targetDate}
+        ORDER BY dc.created_at DESC LIMIT 1
+      `;
+    } else {
+      const targetDate = date ?? new Date().toISOString().slice(0, 10);
+      rows = await sql`
+        SELECT dc.*, u.name AS user_name
+        FROM daily_checkins dc
+        JOIN users u ON u.id = dc.user_id
+        WHERE dc.checkin_date = ${targetDate}
+        ORDER BY dc.created_at DESC
+      `;
+    }
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
   } catch {
+    const targetDate = date ?? new Date().toISOString().slice(0, 10);
     const filtered = userId
-      ? memCheckins.filter(c => c.userId === userId && String(c.checkinDate).slice(0,10) === date)
-      : memCheckins.filter(c => String(c.checkinDate).slice(0,10) === date);
+      ? memCheckins.filter(c => c.userId === userId && String(c.checkinDate).slice(0,10) === targetDate)
+      : memCheckins.filter(c => String(c.checkinDate).slice(0,10) === targetDate);
     return NextResponse.json({ data: filtered });
   }
 }
