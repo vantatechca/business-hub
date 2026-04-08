@@ -79,14 +79,36 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (await denyIfSuperAdmin(params.id, me?.role)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  // Don't let an admin delete themselves — they'd lose access immediately
+  // and the row needs to exist to log them out cleanly.
+  if (params.id === me?.id) {
+    return NextResponse.json({ error: "You can't delete your own account." }, { status: 400 });
+  }
   try {
-    await sql`UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = ${params.id}`;
+    // Capture the email + role for the audit trail before the row vanishes.
+    const target = await sql`SELECT email, role FROM users WHERE id = ${params.id}`;
+    if (!target.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Defensive NULL-out for FK columns whose constraints might predate the
+    // ON DELETE migration. Once setup-db.js has run, these are no-ops because
+    // the constraints handle it; before that, they prevent the DELETE from
+    // failing on legacy databases.
+    await sql`UPDATE metric_assignments SET assigned_by = NULL WHERE assigned_by = ${params.id}`;
+    await sql`UPDATE daily_checkins SET reviewed_by = NULL WHERE reviewed_by = ${params.id}`;
+    await sql`UPDATE metric_updates SET user_id = NULL WHERE user_id = ${params.id}`;
+    await sql`DELETE FROM login_messages WHERE from_user_id = ${params.id}`;
+
+    await sql`DELETE FROM users WHERE id = ${params.id}`;
     await logAudit({
-      action: "user.deactivate",
+      action: "user.delete",
       entityType: "user",
       entityId: params.id,
+      metadata: { email: (target[0] as { email: string }).email, role: (target[0] as { role: string }).role },
       req,
     });
-    return NextResponse.json({ message: "Deactivated" });
-  } catch(e: unknown) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
+    return NextResponse.json({ message: "Deleted" });
+  } catch(e: unknown) {
+    console.error("[users/[id]/DELETE] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
 }

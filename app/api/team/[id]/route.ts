@@ -87,23 +87,41 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-// DELETE soft-deactivates the user so they keep their audit history and can
-// be reactivated from /users.
+// DELETE hard-deletes the user. Related data:
+//   user_departments, daily_checkins, metric_assignments, notifications,
+//   issues (reporter_id) — all cascade automatically.
+//   metric_assignments.assigned_by, daily_checkins.reviewed_by,
+//   metric_updates.user_id — null'd out before delete (defensive against
+//   legacy databases whose FK constraints predate the new ON DELETE rules).
+//   login_messages — deleted explicitly so the FK doesn't block the user delete.
+//   audit_logs.actor_id — already SET NULL on delete.
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const me = await getSessionUser();
   if (!isAdmin(me?.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (await denyIfSuperAdmin(params.id, me?.role)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  if (params.id === me?.id) {
+    return NextResponse.json({ error: "You can't delete your own account." }, { status: 400 });
+  }
   try {
-    await sql`UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = ${params.id}`;
+    const target = await sql`SELECT email, role FROM users WHERE id = ${params.id}`;
+    if (!target.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    await sql`UPDATE metric_assignments SET assigned_by = NULL WHERE assigned_by = ${params.id}`;
+    await sql`UPDATE daily_checkins SET reviewed_by = NULL WHERE reviewed_by = ${params.id}`;
+    await sql`UPDATE metric_updates SET user_id = NULL WHERE user_id = ${params.id}`;
+    await sql`DELETE FROM login_messages WHERE from_user_id = ${params.id}`;
+
+    await sql`DELETE FROM users WHERE id = ${params.id}`;
     await logAudit({
-      action: "user.deactivate",
+      action: "user.delete",
       entityType: "user",
       entityId: params.id,
+      metadata: { email: (target[0] as { email: string }).email, role: (target[0] as { role: string }).role },
       req,
     });
-    return NextResponse.json({ message: "Deactivated" });
+    return NextResponse.json({ message: "Deleted" });
   } catch (e: unknown) {
     console.error("[team/[id]/DELETE] error:", e);
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

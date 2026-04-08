@@ -122,6 +122,25 @@ export function toDateKey(d: Date = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * The current 2-hour slot of the day, 0..11.
+ *   00:00–01:59 → 0
+ *   02:00–03:59 → 1
+ *   ...
+ *   22:00–23:59 → 11
+ *
+ * The quote hero rotates on every slot boundary, so a viewer keeping the
+ * dashboard open will see a new quote roughly every 2 hours.
+ */
+export function twoHourSlot(d: Date = new Date()): number {
+  return Math.floor(d.getHours() / 2);
+}
+
+/** Cache / hash key combining date and 2-hour slot. */
+export function slotKey(d: Date = new Date()): string {
+  return `${toDateKey(d)}-s${twoHourSlot(d)}`;
+}
+
 /** Simple hash → non-negative integer. */
 function hash(s: string): number {
   let h = 0;
@@ -140,16 +159,20 @@ export function greetingForHour(hour: number): string {
   return "Good night";
 }
 
-/** Deterministic pick from the curated quote list for the given date. */
-export function pickCuratedQuote(dateKey: string): { quote: string; author: string } {
-  const idx = hash(dateKey) % QUOTES.length;
+/**
+ * Deterministic pick from the curated quote list. Accepts either a plain
+ * date key (legacy callers — picks one quote for the whole day) or a slot
+ * key from slotKey() — picks a different quote for each 2-hour window.
+ */
+export function pickCuratedQuote(key: string): { quote: string; author: string } {
+  const idx = hash(key) % QUOTES.length;
   return QUOTES[idx];
 }
 
-/** Deterministic emoji for the given date. */
-export function pickEmoji(dateKey: string): { emoji: string; label: string } {
+/** Deterministic emoji for the given key (date or slot key). */
+export function pickEmoji(key: string): { emoji: string; label: string } {
   // Offset by 7 so the emoji rotation doesn't track the quote rotation 1:1.
-  const idx = (hash(dateKey) + 7) % EMOJIS.length;
+  const idx = (hash(key) + 7) % EMOJIS.length;
   const [emoji, label] = EMOJIS[idx];
   return { emoji, label };
 }
@@ -184,11 +207,15 @@ function rotatingHouse(dateKey: string): string {
   return HOUSE_ATTRIBUTIONS[idx];
 }
 
-/** Build a full curated inspiration object for today (no API calls). */
+/**
+ * Build a full curated inspiration object for the current 2-hour slot. The
+ * `dateKey` field on the returned object is the slot key (date + slot index)
+ * so attributionFor() and the API cache both rotate together.
+ */
 export function curatedInspiration(date: Date = new Date()): Inspiration {
-  const dateKey = toDateKey(date);
-  const { emoji, label } = pickEmoji(dateKey);
-  const { quote, author } = pickCuratedQuote(dateKey);
+  const key = slotKey(date);
+  const { emoji, label } = pickEmoji(key);
+  const { quote, author } = pickCuratedQuote(key);
   return {
     greeting: greetingForHour(date.getHours()),
     emoji,
@@ -196,6 +223,6 @@ export function curatedInspiration(date: Date = new Date()): Inspiration {
     quote,
     author,
     source: "curated",
-    dateKey,
+    dateKey: key,
   };
 }

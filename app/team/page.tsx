@@ -8,10 +8,10 @@ import MultiDeptSelect from "@/components/MultiDeptSelect";
 import type { TeamMember, Department, UserRole } from "@/lib/types";
 
 const STATUSES = ["active", "away", "busy", "offline"];
-// Role options shown in the add/edit form. Super admin is deliberately
-// excluded — only super_admin can create another super_admin, and that
-// already happens through the bootstrap seed.
-const ROLES: { value: Exclude<UserRole, "super_admin" | "leader">; label: string }[] = [
+// Base role options shown in the add/edit form. The super_admin row is
+// appended at runtime ONLY for super_admin viewers — see the ROLES const
+// inside the component.
+const BASE_ROLE_OPTIONS: { value: Exclude<UserRole, "super_admin" | "leader">; label: string }[] = [
   { value: "admin",   label: "Admin" },
   { value: "manager", label: "Manager" },
   { value: "lead",    label: "Lead" },
@@ -41,7 +41,10 @@ const SCOL: Record<string, string> = {
 };
 const TMMD = new Date().toISOString().slice(5, 10);
 
-type FormRole = Exclude<UserRole, "super_admin" | "leader">;
+// FormRole is wider than the dropdown set so super_admin viewers can keep
+// the super_admin role on existing super_admin rows. Non-SA viewers never
+// see super_admin in the dropdown — see ROLES inside the component.
+type FormRole = Exclude<UserRole, "leader">;
 
 const blank = {
   name: "",
@@ -57,10 +60,19 @@ const blank = {
 export default function TeamPage() {
   const { data: session } = useSession();
   const myRole = (session?.user as { role?: string })?.role ?? "member";
+  const myId = (session?.user as { id?: string })?.id;
   const isAdmin = myRole === "admin" || myRole === "super_admin";
+  const isSuperAdmin = myRole === "super_admin";
   // Profile drawer opens for anyone above lead. Lead still gets a click that
   // shows a minimal read-only card (the drawer handles the minimal branch).
   const canOpenProfileDrawer = myRole !== "member";
+
+  // Super admin viewers see super_admin as a selectable role so they can
+  // promote / demote other accounts and (importantly) keep their own role
+  // intact when editing themselves.
+  const ROLES: { value: FormRole; label: string }[] = isSuperAdmin
+    ? [{ value: "super_admin", label: "Super Admin" }, ...BASE_ROLE_OPTIONS]
+    : [...BASE_ROLE_OPTIONS];
 
   const [team, setTeam]   = useState<TeamMember[]>([]);
   const [depts, setDepts] = useState<Department[]>([]);
@@ -103,11 +115,13 @@ export default function TeamPage() {
 
   const openEdit = (m: TeamMember) => {
     setEditing(m);
-    // Only allow edit for the 4 "regular" roles in the form (super_admin
-    // shouldn't appear, leader maps to manager in the UI).
-    const formRole: FormRole =
-      m.role === "super_admin" || m.role === "leader" ? "manager"
-      : (m.role as FormRole);
+    // Preserve the user's role in the form. "leader" → "manager" (deprecated
+    // alias). "super_admin" stays as super_admin for super admin viewers, or
+    // falls back to "admin" for everyone else (the option is hidden anyway).
+    let formRole: FormRole;
+    if (m.role === "leader") formRole = "manager";
+    else if (m.role === "super_admin") formRole = isSuperAdmin ? "super_admin" : "admin";
+    else formRole = m.role as FormRole;
     setForm({
       name: m.name,
       jobTitle: m.jobTitle ?? "",
@@ -157,6 +171,14 @@ export default function TeamPage() {
   const update = async () => {
     if (!editing) return;
     if (!form.name.trim()) return toast("Name is required", "er");
+    // Self-role-change confirm — prevents the "I edited myself and lost my
+    // super admin power" footgun. Same guard as on /users.
+    if (editing.id === myId && editing.role !== form.role) {
+      const ok = window.confirm(
+        `You are about to change YOUR OWN role from "${editing.role}" to "${form.role}". This may lock you out of admin features. Continue?`
+      );
+      if (!ok) return;
+    }
     const res = await fetch(`/api/team/${editing.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -176,9 +198,13 @@ export default function TeamPage() {
 
   const del = async () => {
     if (!deleting) return;
-    await fetch(`/api/team/${deleting.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/team/${deleting.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      return toast(e.error || "Delete failed", "er");
+    }
     await load();
-    toast("Member deactivated", "wa");
+    toast("Member deleted", "wa");
   };
 
   const toggleCI = async (m: TeamMember) => {
@@ -320,7 +346,7 @@ export default function TeamPage() {
                   <td onClick={() => openDrawer(m)} style={{ fontSize: 12, color: "var(--text-secondary)" }}>{m.jobTitle ?? "—"}</td>
                   <td onClick={() => openDrawer(m)}>
                     <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, fontWeight: 700, textTransform: "capitalize", background: ROLE_BG[m.role] ?? "var(--accent-bg)", color: ROLE_FG[m.role] ?? "var(--accent)" }}>
-                      {m.role.replace("_", " ")}
+                      {m.role === "super_admin" ? "Super Admin" : m.role.replace("_", " ")}
                     </span>
                   </td>
                   <td onClick={() => openDrawer(m)}>
@@ -418,7 +444,7 @@ export default function TeamPage() {
         onClose={() => setDeleting(null)}
         onConfirm={del}
         name={deleting?.name ?? ""}
-        entity="member (will be deactivated, not deleted)"
+        entity="member (this is permanent)"
       />
 
       <ProfileDrawer
