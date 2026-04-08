@@ -55,6 +55,11 @@ export default function BirthdaysPage() {
     setTick(t => t + 1);
     toast(`Marked ${name}'s birthday as greeted 🎉`);
   };
+  const unmarkGreeted = (uid: string, name: string) => {
+    localStorage.removeItem(greetedKey(uid, year));
+    setTick(t => t + 1);
+    toast(`Unmarked ${name}'s birthday`, "wa");
+  };
   const dismiss = (uid: string, name: string) => {
     localStorage.setItem(dismissedKey(uid, year), "1");
     setTick(t => t + 1);
@@ -69,6 +74,13 @@ export default function BirthdaysPage() {
     const m = isMarked(u.userId, year);
     return !m.greeted && !m.dismissed;
   });
+  // Combined list of everyone marked as greeted (today + recent-missed), newest
+  // first. Shown at the bottom of the page so users still see who they've
+  // already acknowledged and can unmark by mistake.
+  const greetedList = [
+    ...greetedToday,
+    ...(data?.recent ?? []).filter(u => isMarked(u.userId, year).greeted),
+  ].sort((a, b) => b.daysUntil - a.daysUntil);
 
   return (
     <AppLayout title="Birthdays">
@@ -150,6 +162,26 @@ export default function BirthdaysPage() {
               </CardGrid>
             )}
           </Section>
+
+          {/* Greeted — everyone already acknowledged this year. Shown so
+              users can still see who they've greeted and unmark if needed. */}
+          <Section title="Greeted" count={greetedList.length} icon="✅" accent="var(--success)">
+            {greetedList.length === 0 ? (
+              <div style={{ padding: "16px 0", color: "var(--text-muted)", fontSize: 12 }}>
+                No one has been marked as greeted yet.
+              </div>
+            ) : (
+              <CardGrid>
+                {greetedList.map(u => (
+                  <BirthdayCard key={u.userId} u={u} variant="greeted">
+                    <ActionButton color="var(--text-secondary)" icon={<X size={13} />} onClick={() => unmarkGreeted(u.userId, u.name)}>
+                      Unmark
+                    </ActionButton>
+                  </BirthdayCard>
+                ))}
+              </CardGrid>
+            )}
+          </Section>
         </>
       )}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -176,15 +208,20 @@ function CardGrid({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 }}>{children}</div>;
 }
 
-function BirthdayCard({ u, variant, children }: { u: BirthdayUser; variant: "today" | "upcoming" | "missed"; children?: React.ReactNode }) {
+function BirthdayCard({ u, variant, children }: { u: BirthdayUser; variant: "today" | "upcoming" | "missed" | "greeted"; children?: React.ReactNode }) {
   const accent =
-    variant === "today" ? "var(--accent)" :
+    variant === "today"    ? "var(--accent)"  :
     variant === "upcoming" ? "var(--warning)" :
+    variant === "greeted"  ? "var(--success)" :
     "var(--danger)";
   const subtitle =
-    variant === "today" ? "Today!" :
+    variant === "today"    ? "Today!" :
     variant === "upcoming" ? `In ${u.daysUntil} day${u.daysUntil === 1 ? "" : "s"}` :
-    `${Math.abs(u.daysUntil)} day${Math.abs(u.daysUntil) === 1 ? "" : "s"} ago`;
+    variant === "greeted"
+      ? (u.daysUntil === 0
+          ? "✓ Greeted today"
+          : `✓ Greeted · ${Math.abs(u.daysUntil)} day${Math.abs(u.daysUntil) === 1 ? "" : "s"} ago`)
+      : `${Math.abs(u.daysUntil)} day${Math.abs(u.daysUntil) === 1 ? "" : "s"} ago`;
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
