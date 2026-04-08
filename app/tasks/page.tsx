@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Badge, Modal, FormField, HubInput, HubSelect, useToast, ToastList } from "@/components/ui/shared";
-import type { Task, Department } from "@/lib/types";
+import type { Task, Department, TeamMember } from "@/lib/types";
+import { formatTaskDueDate, isTaskDueTodayOrPast } from "@/lib/types";
 import {
   DndContext,
   DragEndEvent,
@@ -33,7 +34,9 @@ const COLS = [
   { key:"done",        label:"Done",        color:"var(--success)" },
 ];
 const PRIORITIES = ["urgent","high","medium","low"];
-const blank = { title:"", priority:"medium", status:"todo", departmentId: "" as string | number, departmentName:"", assigneeInitials:"", dueDate:"Today" };
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const blank = { title:"", priority:"medium", status:"todo", departmentId: "" as string | number, departmentName:"", assigneeInitials:"", dueDate: todayIso() };
+const blankMember = { name: "", role: "", departmentId: "" as string | number, departmentName: "", status: "active", birthday: "" };
 
 export default function TasksPage() {
   const { data: session } = useSession();
@@ -42,12 +45,16 @@ export default function TasksPage() {
 
   const [tasks, setTasks]   = useState<Task[]>([]);
   const [depts, setDepts]   = useState<Department[]>([]);
+  const [team, setTeam]     = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ]           = useState("");
   const [deptFilter, setDeptFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [form, setForm]     = useState<typeof blank>({ ...blank });
+  // Inline "add member" modal state — opens from the Assignee dropdown
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [memberForm, setMemberForm] = useState<typeof blankMember>({ ...blankMember });
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const { ts, toast }       = useToast();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -56,7 +63,13 @@ export default function TasksPage() {
   const load = () => Promise.all([
     fetch("/api/tasks").then(r => r.json()),
     fetch("/api/departments").then(r => r.json()),
-  ]).then(([t, d]) => { setTasks(t.data ?? []); setDepts(d.data ?? []); setLoading(false); });
+    fetch("/api/team").then(r => r.json()),
+  ]).then(([t, d, m]) => {
+    setTasks(t.data ?? []);
+    setDepts(d.data ?? []);
+    setTeam(m.data ?? []);
+    setLoading(false);
+  });
   useEffect(() => { load(); }, []);
 
   // Filter by title AND department (match either name or id, since task.departmentId
@@ -69,8 +82,51 @@ export default function TasksPage() {
   });
 
   const openAdd = (status = "todo") => {
-    setForm({ ...blank, status, departmentId: String(depts[0]?.id ?? ""), departmentName: depts[0]?.name ?? "" });
+    setForm({
+      ...blank,
+      status,
+      departmentId: String(depts[0]?.id ?? ""),
+      departmentName: depts[0]?.name ?? "",
+      dueDate: todayIso(),
+    });
     setShowAdd(true);
+  };
+
+  // Triggered when the Assignee dropdown's "+ Add new member…" option is picked
+  const openAddMember = () => {
+    setMemberForm({
+      ...blankMember,
+      departmentId: depts[0]?.id ?? "",
+      departmentName: depts[0]?.name ?? "",
+    });
+    setShowAddMember(true);
+  };
+
+  const saveMember = async () => {
+    if (!memberForm.name || !memberForm.role) {
+      return toast("Name and role are required", "er");
+    }
+    const initials = memberForm.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "??";
+    const res = await fetch("/api/team", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...memberForm, initials }),
+    });
+    if (!res.ok) return toast("Failed to add member", "er");
+    // Re-fetch team list and auto-select the new member in whichever form is open
+    const teamRes = await fetch("/api/team").then(r => r.json());
+    setTeam(teamRes.data ?? []);
+    setForm(p => ({ ...p, assigneeInitials: initials }));
+    setShowAddMember(false);
+    toast(`${memberForm.name} added`);
+  };
+
+  const selectMember = (initials: string) => {
+    if (initials === "__add_new__") {
+      openAddMember();
+      return;
+    }
+    setForm(p => ({ ...p, assigneeInitials: initials }));
   };
 
   const save = async () => {
@@ -200,9 +256,52 @@ export default function TasksPage() {
             {depts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
           </HubSelect>
         </FormField>
-        <FormField label="Due Date"><HubInput value={form.dueDate} onChange={e => setForm(p => ({...p,dueDate:e.target.value}))} placeholder="Today, Dec 15…" /></FormField>
+        <FormField label="Due Date">
+          <HubInput
+            type="date"
+            value={/^\d{4}-\d{2}-\d{2}$/.test(form.dueDate) ? form.dueDate : ""}
+            onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}
+          />
+        </FormField>
       </div>
-      <FormField label="Assignee Initials"><HubInput value={form.assigneeInitials} onChange={e => setForm(p => ({...p,assigneeInitials:e.target.value.toUpperCase().slice(0,2)}))} placeholder="AC" maxLength={2} style={{ textTransform:"uppercase" }} /></FormField>
+      <FormField label="Assignee">
+        <HubSelect
+          value={form.assigneeInitials}
+          onChange={e => selectMember(e.target.value)}
+        >
+          <option value="">— Unassigned —</option>
+          {team.map(m => (
+            <option key={m.id} value={m.initials}>
+              {m.name} ({m.initials}){m.departmentName ? ` · ${m.departmentName}` : ""}
+            </option>
+          ))}
+          <option value="__add_new__">+ Add new team member…</option>
+        </HubSelect>
+      </FormField>
+    </>
+  );
+
+  const memberFormJsx = (
+    <>
+      <FormField label="Full Name">
+        <HubInput value={memberForm.name} onChange={e => setMemberForm(p => ({ ...p, name: e.target.value }))} placeholder="First Last" />
+      </FormField>
+      <FormField label="Role">
+        <HubInput value={memberForm.role} onChange={e => setMemberForm(p => ({ ...p, role: e.target.value }))} placeholder="e.g. Senior Engineer" />
+      </FormField>
+      <FormField label="Department">
+        <HubSelect
+          value={String(memberForm.departmentId ?? "")}
+          onChange={e => {
+            const id = e.target.value;
+            const d = depts.find(x => String(x.id) === String(id));
+            setMemberForm(p => ({ ...p, departmentId: id, departmentName: d?.name ?? "" }));
+          }}
+        >
+          <option value="">— None —</option>
+          {depts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+        </HubSelect>
+      </FormField>
     </>
   );
 
@@ -275,6 +374,14 @@ export default function TasksPage() {
           <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>
         </div>
       </Modal>
+
+      <Modal open={showAddMember} onClose={() => setShowAddMember(false)} title="Add Team Member">
+        {memberFormJsx}
+        <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
+          <button onClick={() => setShowAddMember(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+          <button onClick={saveMember} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Add Member</button>
+        </div>
+      </Modal>
     </AppLayout>
   );
 }
@@ -339,7 +446,7 @@ function TaskCardBody({
       </div>
       <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", marginBottom:7, lineHeight:1.4 }}>{t.title}</div>
       <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:10 }}>
-        {t.departmentName || <span style={{ color:"var(--text-muted)", fontStyle:"italic" }}>No department</span>} · <span style={{ color:t.dueDate==="Today"?"var(--danger)":"var(--text-secondary)" }}>⏱ {t.dueDate}</span>
+        {t.departmentName || <span style={{ color:"var(--text-muted)", fontStyle:"italic" }}>No department</span>} · <span style={{ color: isTaskDueTodayOrPast(t.dueDate) ? "var(--danger)" : "var(--text-secondary)" }}>⏱ {formatTaskDueDate(t.dueDate)}</span>
       </div>
       {onAdvance && onDelete && (
         <div style={{ display:"flex", gap:6 }}>
