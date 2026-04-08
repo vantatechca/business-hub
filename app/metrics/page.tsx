@@ -6,6 +6,7 @@ import { Card, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, To
 import { Sortable, useSortableItem, DragHandle, overlayCardStyle } from "@/components/ui/Sortable";
 import { GripVertical } from "lucide-react";
 import MetricHistoryDrawer from "@/components/MetricHistoryDrawer";
+import DueAlertBanner from "@/components/DueAlertBanner";
 import type { Metric, Department } from "@/lib/types";
 import { metricDelta, PRIORITY_OPTIONS, priorityToOption } from "@/lib/types";
 
@@ -183,6 +184,17 @@ export default function MetricsPage() {
   return (
     <AppLayout title="Metrics" onNew={() => { setForm({...blank, departmentId: depts[0]?.id ?? ""}); setShowAdd(true); }} newLabel="Add Metric">
       <ToastList ts={ts} />
+
+      <DueAlertBanner
+        items={metrics.map(m => ({
+          id: m.id,
+          title: m.name,
+          dueDate: m.dueDate ?? null,
+          metricType: m.metricType,
+          departmentName: m.departmentName,
+        }))}
+        label="metrics"
+      />
 
       {/* Summary bar */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:11, marginBottom:14 }}>

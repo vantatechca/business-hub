@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const b = await req.json();
   try {
@@ -9,7 +11,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (b.status       !== undefined) await sql`UPDATE tasks SET status = ${b.status}, updated_at = NOW() WHERE id = ${params.id}`;
     if (b.departmentId !== undefined) await sql`UPDATE tasks SET department_id = ${b.departmentId || null}, updated_at = NOW() WHERE id = ${params.id}`;
     if (b.assigneeId   !== undefined) await sql`UPDATE tasks SET assignee_id = ${b.assigneeId || null}, updated_at = NOW() WHERE id = ${params.id}`;
-    if (b.dueDate      !== undefined) await sql`UPDATE tasks SET due_date = ${b.dueDate || null}, updated_at = NOW() WHERE id = ${params.id}`;
+    if (b.dueDate      !== undefined) {
+      // Accept YYYY-MM-DD or empty/null. Reject anything else (e.g. the
+      // "Wed Apr 08" legacy string from the old broken shape function)
+      // with a clean error message instead of letting Postgres reject it.
+      const raw = (b.dueDate ?? "") as string;
+      if (raw && !ISO_DATE_RE.test(String(raw))) {
+        return NextResponse.json({ error: `Invalid dueDate: ${raw}` }, { status: 400 });
+      }
+      await sql`UPDATE tasks SET due_date = ${raw || null}, updated_at = NOW() WHERE id = ${params.id}`;
+    }
     if (b.sortOrder    !== undefined) await sql`UPDATE tasks SET sort_order = ${Number(b.sortOrder) || 0}, updated_at = NOW() WHERE id = ${params.id}`;
     return NextResponse.json({ message: "Updated" });
   } catch (e: unknown) {

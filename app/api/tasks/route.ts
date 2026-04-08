@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, rowsToCamel, toCamel } from "@/lib/db";
+import { sql, rowsToCamel, toCamel, toDateString } from "@/lib/db";
 import { getInitials } from "@/lib/types";
 
 function shape(row: Record<string, unknown>): Record<string, unknown> {
   const o = toCamel<Record<string, unknown>>(row);
-  if (o.dueDate) o.dueDate = String(o.dueDate).slice(0, 10);
+  // dueDate can come back as a Date object from the neon driver; toDateString
+  // handles that plus strings and null so the client always gets YYYY-MM-DD.
+  o.dueDate = toDateString(o.dueDate);
   if (o.assigneeName) o.assigneeInitials = getInitials(o.assigneeName as string);
   return o;
 }

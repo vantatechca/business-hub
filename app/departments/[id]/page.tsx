@@ -10,6 +10,7 @@ import {
 import type { Department, Task, TeamMember, Metric, RevenueEntry, ExpenseEntry } from "@/lib/types";
 import { formatTaskDueDate, isTaskDueTodayOrPast, PRIORITY_OPTIONS, priorityToOption, priorityLabel, priorityColor, formatMetricValue } from "@/lib/types";
 import { formatValue } from "@/components/ui/shared";
+import DueAlertBanner from "@/components/DueAlertBanner";
 import { ArrowLeft, X, Pencil, Plus, Loader2 } from "lucide-react";
 
 const PR: Record<string, { l: string; bg: string; c: string }> = {
@@ -458,6 +459,29 @@ export default function DepartmentDetailPage() {
           </div>
         </div>
       </Card>
+
+      {/* Due alert banner — combines this department's tasks and metrics
+          into a single overdue / due-soon view. */}
+      <div style={{ marginTop: 14 }}>
+        <DueAlertBanner
+          items={[
+            ...myTasks.map(t => ({
+              id: `task-${t.id}`,
+              title: t.title,
+              dueDate: t.dueDate,
+              status: t.status,
+              departmentName: "Task",
+            })),
+            ...myMetrics.map(m => ({
+              id: `metric-${m.id}`,
+              title: m.name,
+              dueDate: m.dueDate ?? null,
+              departmentName: "Metric",
+            })),
+          ]}
+          label="items"
+        />
+      </div>
 
       {/* Tab bar — switches which section renders below the header. */}
       <div style={{ display: "flex", gap: 4, marginTop: 14, marginBottom: 11, borderBottom: "1px solid var(--border-divider)" }}>
