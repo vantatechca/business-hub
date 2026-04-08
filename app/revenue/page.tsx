@@ -167,35 +167,55 @@ export default function RevenuePage() {
       </div>
 
       {/* Summary */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:14 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:12, marginBottom:14 }}>
         {[
-          { l: "Total Revenue", v: formatMoney(total, displayCurrency), c: "var(--success)" },
-          { l: "This Month",    v: formatMoney(thisM, displayCurrency), c: "var(--accent)" },
-          { l: "Entries",       v: String(entries.length),              c: "var(--violet)" },
+          { l: "Total Revenue", v: formatMoney(total, displayCurrency), c: "#34d399", sub: `${entries.length} entries · all-time` },
+          { l: "This Month",    v: formatMoney(thisM, displayCurrency), c: "#5b8ef8", sub: `${MONTHS[new Date().getMonth()]} ${new Date().getFullYear()}` },
+          { l: "Avg / Entry",   v: formatMoney(entries.length ? total / entries.length : 0, displayCurrency), c: "#a78bfa", sub: "Average per entry" },
         ].map((s, i) => (
-          <div key={i} className="hub-card" style={{ padding:18 }}>
-            <div style={{ fontSize:11, fontWeight:600, color:"var(--text-secondary)", marginBottom:6 }}>{s.l}</div>
-            <div style={{ fontSize:24, fontWeight:800, letterSpacing:"-0.03em", color:s.c }}>{s.v}</div>
+          <div key={i} className="hub-card" style={{ position:"relative", overflow:"hidden", padding:20, borderTop:`3px solid ${s.c}` }}>
+            <div aria-hidden style={{ position:"absolute", inset:0, background:`radial-gradient(circle at 100% 0%, ${s.c}14, transparent 60%)`, pointerEvents:"none" }} />
+            <div style={{ position:"relative" }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", marginBottom:8, textTransform:"uppercase", letterSpacing:".06em" }}>{s.l}</div>
+              <div style={{ fontSize:28, fontWeight:800, letterSpacing:"-0.03em", color:s.c, lineHeight:1 }}>{s.v}</div>
+              <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:6 }}>{s.sub}</div>
+            </div>
           </div>
         ))}
       </div>
 
       {/* Chart */}
       {activeIdxs.length > 0 && (
-        <div className="hub-card" style={{ padding:18, marginBottom:14 }}>
-          <div style={{ fontSize:13, fontWeight:800, color:"var(--text-primary)", marginBottom:4 }}>Monthly Revenue</div>
-          <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:12 }}>{displayCurrency}</div>
-          <svg width="100%" viewBox="0 0 540 120" preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
+        <div className="hub-card" style={{ padding:20, marginBottom:14 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+            <div>
+              <div style={{ fontSize:13, fontWeight:800, color:"var(--text-primary)" }}>Monthly Revenue</div>
+              <div style={{ fontSize:11, color:"var(--text-secondary)", marginTop:2 }}>Values in {displayCurrency}</div>
+            </div>
+            <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:700, letterSpacing:".05em", textTransform:"uppercase" }}>
+              Peak: {formatMoney(maxM, displayCurrency)}
+            </div>
+          </div>
+          <svg width="100%" viewBox="0 0 540 150" preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
+            <defs>
+              <linearGradient id="revBar" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#34d399" stopOpacity="0.95"/>
+                <stop offset="100%" stopColor="#34d399" stopOpacity="0.55"/>
+              </linearGradient>
+            </defs>
+            {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
+              <line key={i} x1="0" y1={130 - p * 110} x2="540" y2={130 - p * 110} stroke="var(--border-divider)" strokeWidth="0.5" strokeDasharray="2 3" />
+            ))}
             {activeIdxs.map((mi, i) => {
               const cw = 540 / activeIdxs.length;
               const cx = i * cw + cw / 2;
-              const bw = Math.min(40, cw * 0.55);
-              const bh = Math.round((byMonth[mi] / maxM) * 100);
+              const bw = Math.min(48, cw * 0.55);
+              const bh = Math.max(6, Math.round((byMonth[mi] / maxM) * 110));
               return (
                 <g key={mi}>
-                  <rect x={cx-bw/2} y={110-bh} width={bw} height={bh} fill="var(--success)" rx={4} opacity=".85"/>
-                  <text x={cx} y={118} textAnchor="middle" fontSize={9} fill="var(--text-secondary)" fontFamily="inherit">{MONTHS[mi]}</text>
-                  <text x={cx} y={110-bh-4} textAnchor="middle" fontSize={9} fill="var(--success)" fontFamily="inherit">{formatMoney(byMonth[mi], displayCurrency)}</text>
+                  <rect x={cx-bw/2} y={130-bh} width={bw} height={bh} fill="url(#revBar)" rx={6} />
+                  <text x={cx} y={144} textAnchor="middle" fontSize={10} fill="var(--text-secondary)" fontFamily="inherit" fontWeight={600}>{MONTHS[mi]}</text>
+                  <text x={cx} y={130-bh-5} textAnchor="middle" fontSize={10} fill="#34d399" fontFamily="inherit" fontWeight={800}>{formatMoney(byMonth[mi], displayCurrency)}</text>
                 </g>
               );
             })}
