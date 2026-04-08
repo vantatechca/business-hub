@@ -50,17 +50,14 @@ export default function DashboardPage() {
     });
   },[]);
 
-  // Filter today's birthdays through localStorage "greeted" state
+  // Filter today's birthdays through the localStorage "greeted" state so
+  // anyone the admin has already acknowledged on /birthdays doesn't linger
+  // in the dashboard banner. Actual greeting happens on /birthdays — the
+  // banner is a link, not an inline action.
   const year = new Date().getFullYear();
-  const [greetedTick, setGreetedTick] = useState(0); // re-render trigger
   const isGreeted = (uid: string) =>
     typeof window !== "undefined" && localStorage.getItem(`bday_greeted_${uid}_${year}`) === "1";
-  void greetedTick;
   const unreviewedBdays = bdays.today.filter(u => !isGreeted(u.userId));
-  const markGreeted = (uid: string) => {
-    localStorage.setItem(`bday_greeted_${uid}_${year}`, "1");
-    setGreetedTick(t => t + 1);
-  };
 
   const today    = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   const tRev     = rev.reduce((a,r)=>a+r.amount,0);
@@ -98,7 +95,7 @@ export default function DashboardPage() {
               <Link
                 href="/birthdays"
                 style={{
-                  display: "flex", alignItems: "center", gap: 14,
+                  display: "flex", alignItems: "flex-start", gap: 14,
                   padding: "14px 18px", borderRadius: 12,
                   background: "linear-gradient(135deg, rgba(91,142,248,.12), rgba(167,139,250,.12))",
                   border: "1px solid rgba(91,142,248,.35)",
@@ -106,23 +103,19 @@ export default function DashboardPage() {
                   cursor: "pointer",
                 }}
               >
-                <div style={{ width: 42, height: 42, borderRadius: 11, background: "rgba(91,142,248,.22)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 11, background: "rgba(91,142,248,.22)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
                   <Cake size={20} color="var(--accent)" />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", letterSpacing: ".05em", textTransform: "uppercase", marginBottom: 2 }}>
                     🎂 {unreviewedBdays.length} birthday{unreviewedBdays.length === 1 ? "" : "s"} today
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {unreviewedBdays.map(u => u.name).slice(0, 3).join(", ")}
-                    {unreviewedBdays.length > 3 && <> +{unreviewedBdays.length - 3} more</>}
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.45 }}>
+                    {unreviewedBdays.map(u => u.name).join(", ")}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
                     Tap to greet · won&apos;t dismiss until you mark them as greeted
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {unreviewedBdays.slice(0, 4).map(u => <Avatar key={u.userId} s={u.initials} size={30} />)}
                 </div>
               </Link>
             )}
@@ -157,28 +150,6 @@ export default function DashboardPage() {
                 </Link>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Quick-greet buttons for today's birthdays (so users can dismiss right from the banner) */}
-        {unreviewedBdays.length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-            {unreviewedBdays.map(u => (
-              <button
-                key={u.userId}
-                onClick={() => markGreeted(u.userId)}
-                style={{
-                  padding: "5px 11px", borderRadius: 7,
-                  border: "1px solid var(--border-card)",
-                  background: "var(--bg-input)",
-                  color: "var(--text-secondary)",
-                  fontSize: 11, fontWeight: 600, cursor: "pointer",
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                }}
-              >
-                ✓ Greeted {u.name}
-              </button>
-            ))}
           </div>
         )}
 
