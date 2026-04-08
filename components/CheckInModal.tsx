@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
-import { formatMetricValue, getInitials } from "@/lib/types";
+import { formatMetricValue } from "@/lib/types";
 import type { Metric, ExtractedMetric, AiFlag, DailyCheckin } from "@/lib/types";
 
 // ── TYPES ──────────────────────────────────────────────────────
@@ -36,7 +36,6 @@ export default function CheckInModal({ open, onClose, onComplete, canDefer = tru
   const { data: session } = useSession();
   const userId   = (session?.user as { id?: string })?.id;
   const userName = session?.user?.name ?? "there";
-  const role     = (session?.user as { role?: string })?.role ?? "member";
 
   const [step,       setStep]       = useState(0);
   const [mood,       setMood]       = useState<typeof MOODS[0] | null>(null);
@@ -48,7 +47,6 @@ export default function CheckInModal({ open, onClose, onComplete, canDefer = tru
   const [submitting, setSubmitting] = useState(false);
   const [myMetrics,  setMyMetrics]  = useState<Metric[]>([]);
   const [loadingM,   setLoadingM]   = useState(false);
-  const [deferred,   setDeferred]   = useState(false);
 
   // Load member's assigned metrics for context display
   useEffect(() => {
