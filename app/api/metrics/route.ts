@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, rowsToCamel } from "@/lib/db";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Postgres DECIMAL columns come back as strings; coerce to numbers so the UI
+// can do math and call toFixed without crashing.
+const NUMERIC_FIELDS = ["currentValue", "previousValue", "thirtyDayTotal", "targetValue"] as const;
+function coerceMetric(m: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...m };
+  for (const f of NUMERIC_FIELDS) {
+    if (out[f] != null) out[f] = Number(out[f]);
+  }
+  return out;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const deptId = searchParams.get("departmentId");
   const userId = searchParams.get("userId");
+  // Demo/fallback users don't have UUIDs — skip DB query and return empty list.
+  if (userId && !UUID_RE.test(userId)) return NextResponse.json({ data: [] });
   try {
     let rows;
     if (userId) {
@@ -14,7 +29,7 @@ export async function GET(req: NextRequest) {
     } else {
       rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id ORDER BY d.priority_score DESC, m.priority_score DESC, m.sort_order ASC`;
     }
-    return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
+    return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]).map(coerceMetric) });
   } catch { return NextResponse.json({ error: "DB not configured" }, { status: 503 }); }
 }
 

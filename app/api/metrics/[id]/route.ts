@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, toCamel } from "@/lib/db";
 
+const NUMERIC_FIELDS = ["currentValue", "previousValue", "thirtyDayTotal", "targetValue"] as const;
+function coerceMetric(m: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...m };
+  for (const f of NUMERIC_FIELDS) {
+    if (out[f] != null) out[f] = Number(out[f]);
+  }
+  return out;
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const b = await req.json();
   try {
@@ -21,7 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         updated_at = NOW()
       WHERE id = ${params.id} RETURNING *
     `;
-    return NextResponse.json({ data: toCamel(rows[0] as Record<string,unknown>) });
+    return NextResponse.json({ data: coerceMetric(toCamel(rows[0] as Record<string,unknown>)) });
   } catch(e: unknown) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
 }
 

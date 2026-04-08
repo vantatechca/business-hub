@@ -88,16 +88,20 @@ export function healthColor(score: number): string {
   return "var(--danger)";
 }
 export function metricDelta(m: Metric): { value: number; isGood: boolean; pct: string } {
-  const delta = m.currentValue - m.previousValue;
-  const pct = m.previousValue !== 0 ? Math.abs(Math.round((delta / m.previousValue) * 100)) : 0;
+  const cur = Number(m.currentValue) || 0;
+  const prev = Number(m.previousValue) || 0;
+  const delta = cur - prev;
+  const pct = prev !== 0 ? Math.abs(Math.round((delta / prev) * 100)) : 0;
   const up = delta >= 0;
   const isGood = m.direction === "higher_better" ? up : !up;
   return { value: delta, isGood, pct: `${pct}%` };
 }
-export function formatMetricValue(value: number, unit: string): string {
-  if (unit === "USD" || unit === "CAD") return value >= 1000 ? `$${(value/1000).toFixed(1)}K` : `$${value.toFixed(0)}`;
-  if (unit === "minutes") return `${value}m`;
-  return value.toLocaleString();
+export function formatMetricValue(value: number | string | null | undefined, unit: string): string {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return "—";
+  if (unit === "USD" || unit === "CAD") return v >= 1000 ? `$${(v/1000).toFixed(1)}K` : `$${v.toFixed(0)}`;
+  if (unit === "minutes") return `${v}m`;
+  return v.toLocaleString();
 }
 export function getInitials(name: string): string {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);

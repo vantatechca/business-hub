@@ -10,13 +10,17 @@ export const btnSecondaryCls = "inline-flex items-center gap-1.5 px-4 py-2 round
 export const btnDangerCls = "inline-flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-md)] text-sm font-bold cursor-pointer";
 
 // ── HELPERS ───────────────────────────────────────────────────
-export function formatValue(v: number, f: "number"|"currency"|"percent"): string {
-  if (f==="currency") return v>=1e6?`$${(v/1e6).toFixed(2)}M`:`$${Math.round(v/1000)}K`;
-  if (f==="percent") return `${v}%`;
-  return v.toLocaleString();
+export function formatValue(v: number | string | null | undefined, f: "number"|"currency"|"percent"): string {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  if (f==="currency") return n>=1e6?`$${(n/1e6).toFixed(2)}M`:`$${Math.round(n/1000)}K`;
+  if (f==="percent") return `${n}%`;
+  return n.toLocaleString();
 }
-export function pctChange(cur: number, prev: number) {
-  return { value: Math.abs((cur-prev)/Math.max(prev,1)*100).toFixed(1), up: cur>=prev };
+export function pctChange(cur: number | string, prev: number | string) {
+  const c = Number(cur) || 0;
+  const p = Number(prev) || 0;
+  return { value: Math.abs((c-p)/Math.max(p,1)*100).toFixed(1), up: c>=p };
 }
 // healthColor is exported from lib/types
 export function avatarBg(s: string) {

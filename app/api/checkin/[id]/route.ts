@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, toCamel } from "@/lib/db";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Apply confirmed metric updates after user reviews AI proposals
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json();
+  // Demo / in-memory checkin IDs are numeric timestamps, not UUIDs — the DB
+  // path can't handle them, so acknowledge without writing to the DB.
+  if (!UUID_RE.test(params.id)) {
+    return NextResponse.json({ data: { id: params.id, status: body.status ?? "reviewed" } });
+  }
   try {
     // If confirmedMetrics provided, write each to metric_updates
     if (body.confirmedMetrics && Array.isArray(body.confirmedMetrics)) {
