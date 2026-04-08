@@ -36,7 +36,7 @@ const COLS = [
 ];
 const PRIORITIES = ["urgent","high","medium","low"];
 const todayIso = () => new Date().toISOString().slice(0, 10);
-const blank = { title:"", priority:"medium", status:"todo", departmentId: "" as string | number, departmentName:"", assigneeInitials:"", dueDate: todayIso() };
+const blank = { title:"", priority:"medium", status:"todo", departmentId: "" as string | number, departmentName:"", assigneeId: "" as string, assigneeInitials:"", assigneeName: "", dueDate: todayIso() };
 const blankMember = { name: "", role: "", departmentId: "" as string | number, departmentName: "", status: "active", birthday: "" };
 
 export default function TasksPage() {
@@ -116,22 +116,41 @@ export default function TasksPage() {
     if (!res.ok) return toast("Failed to add member", "er");
     // Re-fetch team list and auto-select the new member in whichever form is open
     const teamRes = await fetch("/api/team").then(r => r.json());
-    setTeam(teamRes.data ?? []);
-    setForm(p => ({ ...p, assigneeInitials: initials }));
+    const newTeam: TeamMember[] = teamRes.data ?? [];
+    setTeam(newTeam);
+    const created = newTeam.find(m => m.name === memberForm.name);
+    if (created) {
+      setForm(p => ({
+        ...p,
+        assigneeId: String(created.id),
+        assigneeInitials: created.initials,
+        assigneeName: created.name,
+      }));
+    }
     setShowAddMember(false);
     toast(`${memberForm.name} added`);
   };
 
-  const selectMember = (initials: string) => {
-    if (initials === "__add_new__") {
+  const selectMember = (userId: string) => {
+    if (userId === "__add_new__") {
       openAddMember();
       return;
     }
-    setForm(p => ({ ...p, assigneeInitials: initials }));
+    if (!userId) {
+      setForm(p => ({ ...p, assigneeId: "", assigneeInitials: "", assigneeName: "" }));
+      return;
+    }
+    const picked = team.find(m => String(m.id) === userId);
+    setForm(p => ({
+      ...p,
+      assigneeId: userId,
+      assigneeInitials: picked?.initials ?? "",
+      assigneeName: picked?.name ?? "",
+    }));
   };
 
   const save = async () => {
-    if (!form.title || !form.assigneeInitials) return toast("Title and assignee required", "er");
+    if (!form.title || !form.assigneeId) return toast("Title and assignee required", "er");
     await fetch("/api/tasks", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(form) });
     await load(); setShowAdd(false); toast("Task added");
   };
@@ -144,14 +163,16 @@ export default function TasksPage() {
       status: t.status,
       departmentId: (t.departmentId ?? "") as string | number,
       departmentName: t.departmentName ?? "",
+      assigneeId: (t.assigneeId ?? "") as string,
       assigneeInitials: t.assigneeInitials ?? "",
+      assigneeName: t.assigneeName ?? "",
       dueDate: t.dueDate ?? "",
     });
   };
 
   const update = async () => {
     if (!editing) return;
-    if (!form.title || !form.assigneeInitials) return toast("Title and assignee required", "er");
+    if (!form.title || !form.assigneeId) return toast("Title and assignee required", "er");
     const res = await fetch(`/api/tasks/${editing.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -267,12 +288,12 @@ export default function TasksPage() {
       </div>
       <FormField label="Assignee">
         <HubSelect
-          value={form.assigneeInitials}
+          value={form.assigneeId}
           onChange={e => selectMember(e.target.value)}
         >
           <option value="">— Unassigned —</option>
           {team.map(m => (
-            <option key={m.id} value={m.initials}>
+            <option key={m.id} value={String(m.id)}>
               {m.name} ({m.initials}){m.departmentName ? ` · ${m.departmentName}` : ""}
             </option>
           ))}
@@ -455,7 +476,9 @@ function TaskCardBody({
           {dragHandle}
           <Badge bg={pr.bg} color={pr.c}>{pr.l}</Badge>
         </div>
-        <Avatar s={t.assigneeInitials ?? "?"} size={24} />
+        <span title={t.assigneeName || t.assigneeInitials || "Unassigned"} style={{ display: "inline-flex" }}>
+          <Avatar s={t.assigneeInitials ?? "?"} size={24} />
+        </span>
       </div>
       <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", marginBottom:7, lineHeight:1.4 }}>{t.title}</div>
       <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:10 }}>
