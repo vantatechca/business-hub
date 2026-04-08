@@ -36,19 +36,27 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     }
 
-    // Update checkin status
-    const rows = await sql`
+    // Update checkin status — always. Only overwrite ai_extracted_metrics
+    // when the caller actually sent a confirmedMetrics array (otherwise the
+    // previous bug was clobbering the AI data with jsonb null whenever a
+    // "Mark as Reviewed" request came in).
+    await sql`
       UPDATE daily_checkins SET
-        status              = ${body.status ?? "reviewed"},
-        ai_extracted_metrics = CASE WHEN ${JSON.stringify(body.confirmedMetrics ?? null)}::jsonb IS NOT NULL
-                                THEN ${JSON.stringify(body.confirmedMetrics ?? [])}::jsonb
-                                ELSE ai_extracted_metrics END,
-        processed_at        = NOW()
+        status       = ${body.status ?? "reviewed"},
+        processed_at = NOW()
       WHERE id = ${params.id}
-      RETURNING *
     `;
-    return NextResponse.json({ data: toCamel(rows[0] as Record<string,unknown>) });
+    if (body.confirmedMetrics && Array.isArray(body.confirmedMetrics)) {
+      await sql`
+        UPDATE daily_checkins SET
+          ai_extracted_metrics = ${JSON.stringify(body.confirmedMetrics)}::jsonb
+        WHERE id = ${params.id}
+      `;
+    }
+    const rows = await sql`SELECT * FROM daily_checkins WHERE id = ${params.id}`;
+    return NextResponse.json({ data: toCamel(rows[0] as Record<string, unknown>) });
   } catch(e: unknown) {
+    console.error("[checkin/[id]/PATCH] error:", e);
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 }

@@ -9,7 +9,7 @@ import { getInitials } from "@/lib/types";
 const ROLES  = ["admin","leader","member"];
 const TZONES = ["America/Toronto","America/New_York","America/Chicago","America/Los_Angeles","Europe/Paris","Asia/Manila"];
 const SCOL: Record<string,string> = { admin:"var(--violet)", leader:"var(--warning)", member:"var(--accent)" };
-const blank = { name:"", email:"", role:"member" as User["role"], timezone:"America/Toronto", password:"member123" };
+const blank = { name:"", email:"", role:"member" as User["role"], timezone:"America/Toronto", password:"member123", birthday:"" as string };
 
 export default function UsersPage() {
   const { data: session } = useSession();
@@ -48,7 +48,11 @@ export default function UsersPage() {
 
   const update = async () => {
     if (!editing) return;
-    const res = await fetch(`/api/users/${editing.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ name:form.name, role:form.role, timezone:form.timezone }) });
+    const res = await fetch(`/api/users/${editing.id}`, {
+      method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ name:form.name, role:form.role, timezone:form.timezone, birthday: form.birthday || null }),
+    });
     if (!res.ok) return toast("Update failed", "er");
     await load(); setEditing(null); toast("User updated");
   };
@@ -59,7 +63,17 @@ export default function UsersPage() {
     await load(); toast("User deactivated", "wa");
   };
 
-  const openEdit = (u: User) => { setEditing(u); setForm({ name:u.name, email:u.email, role:u.role, timezone:u.timezone ?? "America/Toronto", password:"" }); };
+  const openEdit = (u: User) => {
+    setEditing(u);
+    setForm({
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      timezone: u.timezone ?? "America/Toronto",
+      password: "",
+      birthday: ((u as unknown as { birthday?: string | null }).birthday) ?? "",
+    });
+  };
 
   const userForm = (
     <div>
@@ -77,6 +91,13 @@ export default function UsersPage() {
           </HubSelect>
         </FormField>
       </div>
+      <FormField label="Birthday (optional)">
+        <HubInput
+          type="date"
+          value={form.birthday ?? ""}
+          onChange={e => setForm(p => ({ ...p, birthday: e.target.value }))}
+        />
+      </FormField>
       {!editing && <FormField label="Initial Password"><HubInput value={form.password} onChange={e => setForm(p => ({...p, password:e.target.value}))} placeholder="member123"/></FormField>}
     </div>
   );

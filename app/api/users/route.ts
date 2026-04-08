@@ -8,11 +8,12 @@ export async function GET(req: NextRequest) {
   const role = searchParams.get("role");
   try {
     const rows = role
-      ? await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at FROM users WHERE role = ${role} ORDER BY name`
-      : await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at FROM users ORDER BY role, name`;
+      ? await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday FROM users WHERE role = ${role} ORDER BY name`
+      : await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday FROM users ORDER BY role, name`;
     const users = rowsToCamel<Record<string,unknown>>(rows as Record<string,unknown>[]).map(u => ({
       ...u,
       initials: getInitials(u.name as string),
+      birthday: u.birthday ? String(u.birthday).slice(0, 10) : null,
       checkedInToday: false,
     }));
     return NextResponse.json({ data: users });
@@ -26,9 +27,9 @@ export async function POST(req: NextRequest) {
   const hash = await bcrypt.hash(pw, 10);
   try {
     const rows = await sql`
-      INSERT INTO users (email, name, password_hash, role, timezone)
-      VALUES (${b.email}, ${b.name}, ${hash}, ${b.role}, ${b.timezone ?? "America/Toronto"})
-      RETURNING id, email, name, role, is_active, created_at
+      INSERT INTO users (email, name, password_hash, role, timezone, birthday)
+      VALUES (${b.email}, ${b.name}, ${hash}, ${b.role}, ${b.timezone ?? "America/Toronto"}, ${b.birthday ?? null})
+      RETURNING id, email, name, role, is_active, created_at, birthday
     `;
     return NextResponse.json({ data: rows[0], tempPassword: pw }, { status: 201 });
   } catch(e: unknown) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }

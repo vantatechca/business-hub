@@ -15,10 +15,17 @@ interface TeamMatrixMember {
   days: Record<string, { status: string; checkinId: string }>;
 }
 
+// Colors per check-in status:
+//   reviewed     = green (admin/leader has signed off)
+//   submitted    = yellow (received but not yet reviewed)
+//   ai_processed = yellow (AI has parsed it but still needs human review)
+//   pending      = yellow-ish muted
+//
+// Cells that are empty (no check-in) get a RED outline.
 const STATUS_COLOR: Record<string, string> = {
-  ai_processed: "var(--success)",
   reviewed:     "var(--success)",
   submitted:    "var(--warning)",
+  ai_processed: "var(--warning)",
   pending:      "var(--text-muted)",
 };
 
@@ -199,12 +206,25 @@ export default function CheckInPage() {
                         const dateObj = new Date(`${month}-${String(day).padStart(2, "0")}T00:00:00`);
                         const dow = dateObj.getDay();
                         const isWeekend = dow === 0 || dow === 6;
+                        // Is this day in the past (or today) in the current month?
+                        // We only mark missed (red outline) for past days — future cells stay neutral.
+                        const cellDate = new Date(`${month}-${String(day).padStart(2, "0")}T00:00:00`);
+                        const nowDate = new Date();
+                        nowDate.setHours(0, 0, 0, 0);
+                        const isPastOrToday = cellDate.getTime() <= nowDate.getTime();
                         const bg = cell ? STATUS_COLOR[cell.status] ?? "var(--accent)" : "transparent";
+                        const isMissed = !cell && isPastOrToday && !isWeekend;
                         return (
                           <td
                             key={day}
                             onClick={() => cell && openCheckinDay(m, day)}
-                            title={cell ? `${m.userName} · ${month}-${String(day).padStart(2, "0")} · ${cell.status}` : ""}
+                            title={
+                              cell
+                                ? `${m.userName} · ${month}-${String(day).padStart(2, "0")} · ${cell.status}`
+                                : isMissed
+                                ? `${m.userName} · ${month}-${String(day).padStart(2, "0")} · missed`
+                                : ""
+                            }
                             style={{
                               padding: "4px 2px",
                               textAlign: "center",
@@ -218,7 +238,11 @@ export default function CheckInPage() {
                               height: 16,
                               borderRadius: 3,
                               background: bg,
-                              border: cell ? "none" : "1px solid var(--border-card)",
+                              border: cell
+                                ? "none"
+                                : isMissed
+                                ? "2px solid var(--danger)"
+                                : "1px solid var(--border-card)",
                               margin: "0 auto",
                             }} />
                           </td>
@@ -233,10 +257,11 @@ export default function CheckInPage() {
               </tbody>
             </table>
           </div>
-          <div style={{ padding: "10px 14px", display: "flex", gap: 16, fontSize: 10, color: "var(--text-secondary)", borderTop: "1px solid var(--border-divider)" }}>
-            <Legend color="var(--success)" label="AI processed / reviewed" />
-            <Legend color="var(--warning)" label="Submitted (not yet AI)" />
-            <Legend color="transparent" label="No check-in" border />
+          <div style={{ padding: "10px 14px", display: "flex", gap: 16, fontSize: 10, color: "var(--text-secondary)", borderTop: "1px solid var(--border-divider)", flexWrap: "wrap" }}>
+            <Legend color="var(--success)" label="Reviewed" />
+            <Legend color="var(--warning)" label="Submitted / not yet reviewed" />
+            <Legend color="transparent" label="Missed" missedOutline />
+            <Legend color="transparent" label="Weekend / future" border />
             <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)" }}>Click a cell to view check-in · click a name for full history</span>
           </div>
         </div>
@@ -249,16 +274,33 @@ export default function CheckInPage() {
         canDefer={true}
       />
 
-      <CheckinViewer checkin={viewing} open={!!viewing} onClose={() => setViewing(null)} />
+      <CheckinViewer
+        checkin={viewing}
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        onReviewed={() => { load(); toast("Marked as reviewed"); }}
+      />
       <MemberCheckinDrawer member={memberDrawer} open={!!memberDrawer} onClose={() => setMemberDrawer(null)} />
     </AppLayout>
   );
 }
 
-function Legend({ color, label, border }: { color: string; label: string; border?: boolean }) {
+function Legend({ color, label, border, missedOutline }: { color: string; label: string; border?: boolean; missedOutline?: boolean }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-      <div style={{ width: 12, height: 12, borderRadius: 3, background: color, border: border ? "1px solid var(--border-card)" : "none" }} />
+      <div
+        style={{
+          width: 12,
+          height: 12,
+          borderRadius: 3,
+          background: color,
+          border: missedOutline
+            ? "2px solid var(--danger)"
+            : border
+            ? "1px solid var(--border-card)"
+            : "none",
+        }}
+      />
       <span>{label}</span>
     </div>
   );

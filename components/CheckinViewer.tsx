@@ -1,12 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
-import { X, Loader2 } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { X, Loader2, CheckCircle2 } from "lucide-react";
 import type { DailyCheckin } from "@/lib/types";
 
 interface Props {
   checkin: DailyCheckin | null;
   open: boolean;
   onClose: () => void;
+  /** Called after a successful "Mark as Reviewed" action so the caller can refresh state */
+  onReviewed?: (checkinId: string) => void;
 }
 
 // Renders one checkin's full AI-analyzed content (used both stand-alone in a
@@ -139,9 +142,14 @@ function Section({ title, body }: { title: string; body: string }) {
 }
 
 // Standalone modal viewer for a single check-in (loads by id)
-export default function CheckinViewer({ checkin, open, onClose }: Props) {
+export default function CheckinViewer({ checkin, open, onClose, onReviewed }: Props) {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string } | undefined)?.role ?? "member";
+  const canReview = role === "admin" || role === "leader";
+
   const [hydrated, setHydrated] = useState<DailyCheckin | null>(checkin);
   const [loading, setLoading] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -167,7 +175,27 @@ export default function CheckinViewer({ checkin, open, onClose }: Props) {
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  const markReviewed = async () => {
+    if (!hydrated?.id) return;
+    setReviewing(true);
+    try {
+      const res = await fetch(`/api/checkin/${hydrated.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "reviewed" }),
+      });
+      if (res.ok) {
+        setHydrated(p => (p ? { ...p, status: "reviewed" } : p));
+        onReviewed?.(hydrated.id);
+      }
+    } finally {
+      setReviewing(false);
+    }
+  };
+
   if (!open) return null;
+
+  const alreadyReviewed = hydrated?.status === "reviewed";
 
   return (
     <div
@@ -194,7 +222,33 @@ export default function CheckinViewer({ checkin, open, onClose }: Props) {
               <div>Loading…</div>
             </div>
           ) : (
-            <CheckinDetail checkin={hydrated} />
+            <>
+              <CheckinDetail checkin={hydrated} />
+              {canReview && hydrated && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-divider)" }}>
+                  {alreadyReviewed ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--success)", fontWeight: 700 }}>
+                      <CheckCircle2 size={14} /> Reviewed
+                    </div>
+                  ) : (
+                    <button
+                      onClick={markReviewed}
+                      disabled={reviewing}
+                      style={{
+                        padding: "8px 16px", borderRadius: 8,
+                        background: "var(--success)", color: "#fff",
+                        border: "none", fontSize: 12, fontWeight: 700,
+                        cursor: reviewing ? "not-allowed" : "pointer",
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        opacity: reviewing ? 0.6 : 1,
+                      }}
+                    >
+                      <CheckCircle2 size={14} /> {reviewing ? "Marking…" : "Mark as Reviewed"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
