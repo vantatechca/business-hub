@@ -24,7 +24,8 @@ export interface Metric {
   name: string; metricType: MetricType; direction: MetricDirection;
   currentValue: number; previousValue: number; thirtyDayTotal: number;
   targetValue?: number; unit: string; priorityScore: number;
-  notes?: string; sortOrder: number; createdAt?: string; updatedAt?: string;
+  notes?: string; dueDate?: string | null; sortOrder: number;
+  createdAt?: string; updatedAt?: string;
   assignees?: MetricAssignment[]; lastUpdatedBy?: string; lastUpdatedAt?: string; apiVerified?: boolean;
 }
 

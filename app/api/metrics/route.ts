@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, rowsToCamel } from "@/lib/db";
+import { sql, rowsToCamel, toDateString } from "@/lib/db";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -11,6 +11,8 @@ function coerceMetric(m: Record<string, unknown>): Record<string, unknown> {
   for (const f of NUMERIC_FIELDS) {
     if (out[f] != null) out[f] = Number(out[f]);
   }
+  // Postgres DATE → "YYYY-MM-DD" string for the UI date picker.
+  if (out.dueDate != null) out.dueDate = toDateString(out.dueDate);
   return out;
 }
 
@@ -37,8 +39,8 @@ export async function POST(req: NextRequest) {
   const b = await req.json();
   try {
     const rows = await sql`
-      INSERT INTO metrics (department_id, name, metric_type, direction, current_value, target_value, unit, priority_score, notes, sort_order)
-      VALUES (${b.departmentId}, ${b.name}, ${b.metricType ?? "value"}, ${b.direction ?? "higher_better"}, ${b.currentValue ?? 0}, ${b.targetValue ?? null}, ${b.unit ?? "count"}, ${b.priorityScore ?? 50}, ${b.notes ?? null}, ${b.sortOrder ?? 99})
+      INSERT INTO metrics (department_id, name, metric_type, direction, current_value, target_value, unit, priority_score, notes, sort_order, due_date)
+      VALUES (${b.departmentId}, ${b.name}, ${b.metricType ?? "value"}, ${b.direction ?? "higher_better"}, ${b.currentValue ?? 0}, ${b.targetValue ?? null}, ${b.unit ?? "count"}, ${b.priorityScore ?? 50}, ${b.notes ?? null}, ${b.sortOrder ?? 99}, ${b.dueDate || null})
       RETURNING *
     `;
     return NextResponse.json({ data: rows[0] }, { status: 201 });

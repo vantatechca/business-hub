@@ -140,6 +140,10 @@ async function runAdditiveMigrations() {
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id ${deptIdType}`,
 
+    // Metrics — optional due date. When set, notifications (separate feature)
+    // ping assignees at T-7d / T-3d / T-0 until the metric is marked complete.
+    `ALTER TABLE metrics ADD COLUMN IF NOT EXISTS due_date DATE`,
+
     // Tasks
     `CREATE TABLE IF NOT EXISTS tasks (
       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
