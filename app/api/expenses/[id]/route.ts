@@ -5,6 +5,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const b = await req.json();
   try {
     if (b.amount       !== undefined) await sql`UPDATE expense_entries SET amount = ${Number(b.amount) || 0} WHERE id = ${params.id}`;
+    if (b.currency     !== undefined && (b.currency === "USD" || b.currency === "CAD")) {
+      await sql`UPDATE expense_entries SET currency = ${b.currency} WHERE id = ${params.id}`;
+    }
     if (b.departmentId !== undefined) await sql`UPDATE expense_entries SET department_id = ${b.departmentId || null} WHERE id = ${params.id}`;
     if (b.description  !== undefined) await sql`UPDATE expense_entries SET description = ${b.description} WHERE id = ${params.id}`;
     if (b.month        !== undefined) await sql`UPDATE expense_entries SET month = ${b.month} WHERE id = ${params.id}`;

@@ -5,13 +5,15 @@ function shape(r: Record<string, unknown>): Record<string, unknown> {
   return { ...r, amount: Number(r.amount) };
 }
 
+const ALLOWED_CURRENCIES = new Set(["USD", "CAD"]);
+
 export async function GET() {
   try {
     const rows = await sql`
-      SELECT r.id, r.amount, r.department_id, r.description, r.month, r.year, r.created_at,
+      SELECT r.id, r.amount, r.currency, r.department_id, r.description, r.month, r.year, r.created_at,
              d.name AS department_name
       FROM revenue_entries r
-      LEFT JOIN departments d ON d.id = r.department_id
+      LEFT JOIN departments d ON d.id::text = r.department_id::text
       ORDER BY r.year DESC, r.created_at DESC
     `;
     return NextResponse.json({ data: rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]).map(shape) });
@@ -24,11 +26,13 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const b = await req.json();
   if (b.amount == null) return NextResponse.json({ error: "amount required" }, { status: 400 });
+  const currency = ALLOWED_CURRENCIES.has(b.currency) ? b.currency : "USD";
   try {
     const inserted = await sql`
-      INSERT INTO revenue_entries (amount, department_id, description, month, year)
+      INSERT INTO revenue_entries (amount, currency, department_id, description, month, year)
       VALUES (
         ${Number(b.amount) || 0},
+        ${currency},
         ${b.departmentId || null},
         ${b.description ?? ""},
         ${b.month ?? null},
@@ -38,10 +42,10 @@ export async function POST(req: NextRequest) {
     `;
     const id = (inserted[0] as Record<string, unknown>).id as string;
     const rows = await sql`
-      SELECT r.id, r.amount, r.department_id, r.description, r.month, r.year, r.created_at,
+      SELECT r.id, r.amount, r.currency, r.department_id, r.description, r.month, r.year, r.created_at,
              d.name AS department_name
       FROM revenue_entries r
-      LEFT JOIN departments d ON d.id = r.department_id
+      LEFT JOIN departments d ON d.id::text = r.department_id::text
       WHERE r.id = ${id}
     `;
     return NextResponse.json({ data: shape(toCamel(rows[0] as Record<string, unknown>)) }, { status: 201 });
