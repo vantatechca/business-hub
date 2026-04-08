@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, rowsToCamel, toCamel, toDateString } from "@/lib/db";
 import { getInitials } from "@/lib/types";
+import { getSessionUser, isManagerOrHigher, getUserScope } from "@/lib/authz";
 
 function shape(row: Record<string, unknown>): Record<string, unknown> {
   const o = toCamel<Record<string, unknown>>(row);
@@ -13,16 +14,42 @@ function shape(row: Record<string, unknown>): Record<string, unknown> {
 
 export async function GET() {
   try {
-    const rows = await sql`
-      SELECT t.id, t.title, t.priority, t.status, t.department_id, t.assignee_id,
-             t.due_date, t.sort_order, t.created_at, t.updated_at,
-             d.name AS department_name,
-             u.name AS assignee_name
-      FROM tasks t
-      LEFT JOIN departments d ON d.id = t.department_id
-      LEFT JOIN users       u ON u.id = t.assignee_id
-      ORDER BY t.sort_order ASC, t.created_at DESC
-    `;
+    // Lead and member: see tasks assigned to them OR tasks belonging to a
+    // department they're a member of (any role_in_dept). Manager+ sees
+    // everything.
+    const me = await getSessionUser();
+    let rows: Record<string, unknown>[] = [];
+    if (!me) {
+      rows = [];
+    } else if (isManagerOrHigher(me.role)) {
+      rows = await sql`
+        SELECT t.id, t.title, t.priority, t.status, t.department_id, t.assignee_id,
+               t.due_date, t.sort_order, t.created_at, t.updated_at,
+               d.name AS department_name,
+               u.name AS assignee_name
+        FROM tasks t
+        LEFT JOIN departments d ON d.id = t.department_id
+        LEFT JOIN users       u ON u.id = t.assignee_id
+        ORDER BY t.sort_order ASC, t.created_at DESC
+      `;
+    } else {
+      const scope = await getUserScope(me.id);
+      // ANY(empty array) returns no rows for that branch but doesn't error,
+      // so the assignee_id = me.id branch still matches personal tasks even
+      // when the user has no department memberships.
+      rows = await sql`
+        SELECT t.id, t.title, t.priority, t.status, t.department_id, t.assignee_id,
+               t.due_date, t.sort_order, t.created_at, t.updated_at,
+               d.name AS department_name,
+               u.name AS assignee_name
+        FROM tasks t
+        LEFT JOIN departments d ON d.id = t.department_id
+        LEFT JOIN users       u ON u.id = t.assignee_id
+        WHERE t.assignee_id = ${me.id}
+           OR t.department_id::text = ANY(${scope.departmentIds}::text[])
+        ORDER BY t.sort_order ASC, t.created_at DESC
+      `;
+    }
     return NextResponse.json({ data: rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]).map(shape) });
   } catch (e: unknown) {
     console.error("[tasks/GET] error:", e);

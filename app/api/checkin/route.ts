@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, rowsToCamel, toCamel } from "@/lib/db";
-import { getSessionUser, canSeeSuperAdmin } from "@/lib/authz";
+import { getSessionUser, canSeeSuperAdmin, isManagerOrHigher } from "@/lib/authz";
 import { logAudit } from "@/lib/audit";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -13,10 +13,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function GET(req: NextRequest) {
   const me = await getSessionUser();
   const { searchParams } = new URL(req.url);
-  const userId = searchParams.get("userId");
+  let userId = searchParams.get("userId");
   const date   = searchParams.get("date");
   const from   = searchParams.get("from");
   const to     = searchParams.get("to");
+
+  // Lead and member can only see their OWN check-ins. Force userId to the
+  // session user regardless of what the query string asked for. (Manager+
+  // gets the unrestricted query path below.)
+  if (me && !isManagerOrHigher(me.role)) {
+    userId = me.id;
+  }
 
   // Demo / non-UUID users have no DB rows.
   if (userId && !UUID_RE.test(userId)) return NextResponse.json({ data: [] });

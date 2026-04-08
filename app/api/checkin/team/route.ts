@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
-import { getSessionUser, canSeeSuperAdmin } from "@/lib/authz";
+import { getSessionUser, canSeeSuperAdmin, isManagerOrHigher } from "@/lib/authz";
 
 // GET /api/checkin/team?month=YYYY-MM
 // Returns:
@@ -29,8 +29,13 @@ export async function GET(req: NextRequest) {
   const lastDay = `${month}-${String(daysInMonth).padStart(2, "0")}`;
 
   const includeSA = canSeeSuperAdmin(me?.role);
+  // Lead and member only see their own row in the matrix. Managers and
+  // above see the whole team. Without a session, return nothing rather
+  // than leaking the whole team to anonymous callers.
+  if (!me) return NextResponse.json({ month, daysInMonth, members: [] });
+  const personalOnly = !isManagerOrHigher(me.role);
   try {
-    const rows = includeSA
+    const rows = personalOnly
       ? await sql`
           SELECT u.id AS user_id, u.name AS user_name, u.role,
                  dc.checkin_date, dc.status, dc.id AS checkin_id
@@ -38,19 +43,30 @@ export async function GET(req: NextRequest) {
           LEFT JOIN daily_checkins dc
             ON dc.user_id = u.id
            AND dc.checkin_date BETWEEN ${firstDay} AND ${lastDay}
-          WHERE u.is_active = TRUE
-          ORDER BY u.role, u.name, dc.checkin_date
+          WHERE u.id = ${me.id}
+          ORDER BY dc.checkin_date
         `
-      : await sql`
-          SELECT u.id AS user_id, u.name AS user_name, u.role,
-                 dc.checkin_date, dc.status, dc.id AS checkin_id
-          FROM users u
-          LEFT JOIN daily_checkins dc
-            ON dc.user_id = u.id
-           AND dc.checkin_date BETWEEN ${firstDay} AND ${lastDay}
-          WHERE u.is_active = TRUE AND u.role != 'super_admin'
-          ORDER BY u.role, u.name, dc.checkin_date
-        `;
+      : (includeSA
+          ? await sql`
+              SELECT u.id AS user_id, u.name AS user_name, u.role,
+                     dc.checkin_date, dc.status, dc.id AS checkin_id
+              FROM users u
+              LEFT JOIN daily_checkins dc
+                ON dc.user_id = u.id
+               AND dc.checkin_date BETWEEN ${firstDay} AND ${lastDay}
+              WHERE u.is_active = TRUE
+              ORDER BY u.role, u.name, dc.checkin_date
+            `
+          : await sql`
+              SELECT u.id AS user_id, u.name AS user_name, u.role,
+                     dc.checkin_date, dc.status, dc.id AS checkin_id
+              FROM users u
+              LEFT JOIN daily_checkins dc
+                ON dc.user_id = u.id
+               AND dc.checkin_date BETWEEN ${firstDay} AND ${lastDay}
+              WHERE u.is_active = TRUE AND u.role != 'super_admin'
+              ORDER BY u.role, u.name, dc.checkin_date
+            `);
 
     const memberMap = new Map<string, {
       userId: string;
