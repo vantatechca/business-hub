@@ -27,8 +27,8 @@ export default function ExpensesPage() {
   const thisM = entries.filter(e => e.month === MONTHS[new Date().getMonth()]).reduce((a, e) => a + e.amount, 0);
 
   const selectDept = (id: string | number) => {
-    const d = depts.find(d => String(d.id) === String(id));
-    setForm(p => ({ ...p, departmentId: id as number, departmentName: d?.name ?? "" }));
+    const d = depts.find(x => String(x.id) === String(id));
+    setForm(p => ({ ...p, departmentId: id as number | string, departmentName: d?.name ?? "" }));
   };
 
   const save = async () => {
@@ -81,7 +81,7 @@ export default function ExpensesPage() {
           </HubSelect>
         </FormField>
         <FormField label="Department">
-          <HubSelect value={form.departmentId} onChange={e => selectDept(+e.target.value)}>
+          <HubSelect value={form.departmentId} onChange={e => selectDept(e.target.value)}>
             {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </HubSelect>
         </FormField>

@@ -44,7 +44,9 @@ export default function TasksPage() {
   const [depts, setDepts]   = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ]           = useState("");
+  const [deptFilter, setDeptFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<Task | null>(null);
   const [form, setForm]     = useState<typeof blank>({ ...blank });
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const { ts, toast }       = useToast();
@@ -57,7 +59,14 @@ export default function TasksPage() {
   ]).then(([t, d]) => { setTasks(t.data ?? []); setDepts(d.data ?? []); setLoading(false); });
   useEffect(() => { load(); }, []);
 
-  const ft = tasks.filter(t => t.title.toLowerCase().includes(q.toLowerCase()));
+  // Filter by title AND department (match either name or id, since task.departmentId
+  // can be a UUID, slug, or number depending on when/where it was created).
+  const ft = tasks.filter(t => {
+    if (!t.title.toLowerCase().includes(q.toLowerCase())) return false;
+    if (!deptFilter) return true;
+    return (t.departmentName ?? "") === deptFilter
+      || String(t.departmentId ?? "") === deptFilter;
+  });
 
   const openAdd = (status = "todo") => {
     setForm({ ...blank, status, departmentId: String(depts[0]?.id ?? ""), departmentName: depts[0]?.name ?? "" });
@@ -68,6 +77,31 @@ export default function TasksPage() {
     if (!form.title || !form.assigneeInitials) return toast("Title and assignee required", "er");
     await fetch("/api/tasks", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(form) });
     await load(); setShowAdd(false); toast("Task added");
+  };
+
+  const openEdit = (t: Task) => {
+    setEditing(t);
+    setForm({
+      title: t.title,
+      priority: t.priority,
+      status: t.status,
+      departmentId: (t.departmentId ?? "") as string | number,
+      departmentName: t.departmentName ?? "",
+      assigneeInitials: t.assigneeInitials ?? "",
+      dueDate: t.dueDate ?? "",
+    });
+  };
+
+  const update = async () => {
+    if (!editing) return;
+    if (!form.title || !form.assigneeInitials) return toast("Title and assignee required", "er");
+    const res = await fetch(`/api/tasks/${editing.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    if (!res.ok) return toast("Update failed", "er");
+    await load(); setEditing(null); toast("Task updated");
   };
 
   const advance = async (t: Task) => {
@@ -83,8 +117,9 @@ export default function TasksPage() {
   };
 
   const selectDept = (id: string | number) => {
-    const d = depts.find(d => String(d.id) === String(id));
-    setForm(p => ({ ...p, departmentId: id as number, departmentName: d?.name ?? "" }));
+    const d = depts.find(x => String(x.id) === String(id));
+    // Store id as-is — it may be a UUID, slug, or number depending on the DB.
+    setForm(p => ({ ...p, departmentId: id as number | string, departmentName: d?.name ?? "" }));
   };
 
   // Find which column contains a given task or column id
@@ -141,15 +176,53 @@ export default function TasksPage() {
     if (!res.ok) { toast("Reorder failed", "er"); await load(); }
   };
 
+  const taskForm = (
+    <>
+      <FormField label="Task Title"><HubInput value={form.title} onChange={e => setForm(p => ({...p,title:e.target.value}))} placeholder="Describe the task…" /></FormField>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <FormField label="Priority">
+          <HubSelect value={form.priority} onChange={e => setForm(p => ({...p,priority:e.target.value}))}>
+            {PRIORITIES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>)}
+          </HubSelect>
+        </FormField>
+        <FormField label="Status">
+          <HubSelect value={form.status} onChange={e => setForm(p => ({...p,status:e.target.value}))}>
+            <option value="todo">To Do</option>
+            <option value="in-progress">In Progress</option>
+            <option value="done">Done</option>
+          </HubSelect>
+        </FormField>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <FormField label="Department">
+          <HubSelect value={String(form.departmentId ?? "")} onChange={e => selectDept(e.target.value)}>
+            <option value="">— None —</option>
+            {depts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+          </HubSelect>
+        </FormField>
+        <FormField label="Due Date"><HubInput value={form.dueDate} onChange={e => setForm(p => ({...p,dueDate:e.target.value}))} placeholder="Today, Dec 15…" /></FormField>
+      </div>
+      <FormField label="Assignee Initials"><HubInput value={form.assigneeInitials} onChange={e => setForm(p => ({...p,assigneeInitials:e.target.value.toUpperCase().slice(0,2)}))} placeholder="AC" maxLength={2} style={{ textTransform:"uppercase" }} /></FormField>
+    </>
+  );
+
   return (
     <AppLayout title="Tasks" onNew={() => openAdd()} newLabel="Add Task">
       <ToastList ts={ts} />
-      <div style={{ display:"flex", gap:10, marginBottom:14, alignItems:"center" }}>
-        <div style={{ flex:1, display:"flex", alignItems:"center", gap:8, background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px" }}>
+      <div style={{ display:"flex", gap:10, marginBottom:14, alignItems:"center", flexWrap:"wrap" }}>
+        <div style={{ flex:1, minWidth:200, display:"flex", alignItems:"center", gap:8, background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px" }}>
           <span style={{ color:"var(--text-muted)" }}>⌕</span>
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search tasks…" style={{ border:"none", background:"transparent", outline:"none", fontSize:12, color:"var(--text-primary)", width:"100%" }} />
         </div>
-        <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{tasks.length} tasks · {tasks.filter(t=>t.status==="done").length} done</span>
+        <select
+          value={deptFilter}
+          onChange={e => setDeptFilter(e.target.value)}
+          style={{ background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px", color:"var(--text-primary)", fontSize:12, outline:"none" }}
+        >
+          <option value="">All Departments</option>
+          {depts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+        </select>
+        <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{ft.length} of {tasks.length} · {tasks.filter(t=>t.status==="done").length} done</span>
       </div>
 
       {loading ? (
@@ -174,6 +247,7 @@ export default function TasksPage() {
                   items={items}
                   dragEnabled={canReorder}
                   onAdvance={advance}
+                  onEdit={openEdit}
                   onDelete={del}
                   onAdd={() => openAdd(col.key)}
                 />
@@ -187,33 +261,18 @@ export default function TasksPage() {
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Task">
-        <FormField label="Task Title"><HubInput value={form.title} onChange={e => setForm(p => ({...p,title:e.target.value}))} placeholder="Describe the task…" /></FormField>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-          <FormField label="Priority">
-            <HubSelect value={form.priority} onChange={e => setForm(p => ({...p,priority:e.target.value}))}>
-              {PRIORITIES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>)}
-            </HubSelect>
-          </FormField>
-          <FormField label="Status">
-            <HubSelect value={form.status} onChange={e => setForm(p => ({...p,status:e.target.value}))}>
-              <option value="todo">To Do</option>
-              <option value="in-progress">In Progress</option>
-              <option value="done">Done</option>
-            </HubSelect>
-          </FormField>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-          <FormField label="Department">
-            <HubSelect value={form.departmentId} onChange={e => selectDept(+e.target.value)}>
-              {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </HubSelect>
-          </FormField>
-          <FormField label="Due Date"><HubInput value={form.dueDate} onChange={e => setForm(p => ({...p,dueDate:e.target.value}))} placeholder="Today, Dec 15…" /></FormField>
-        </div>
-        <FormField label="Assignee Initials"><HubInput value={form.assigneeInitials} onChange={e => setForm(p => ({...p,assigneeInitials:e.target.value.toUpperCase().slice(0,2)}))} placeholder="AC" maxLength={2} style={{ textTransform:"uppercase" }} /></FormField>
+        {taskForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setShowAdd(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={save} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Add Task</button>
+        </div>
+      </Modal>
+
+      <Modal open={!!editing} onClose={() => setEditing(null)} title="Edit Task">
+        {taskForm}
+        <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
+          <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+          <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>
         </div>
       </Modal>
     </AppLayout>
@@ -225,6 +284,7 @@ function KanbanColumn({
   items,
   dragEnabled,
   onAdvance,
+  onEdit,
   onDelete,
   onAdd,
 }: {
@@ -232,6 +292,7 @@ function KanbanColumn({
   items: Task[];
   dragEnabled: boolean;
   onAdvance: (t: Task) => void;
+  onEdit: (t: Task) => void;
   onDelete: (id: string | number) => void;
   onAdd: () => void;
 }) {
@@ -245,7 +306,7 @@ function KanbanColumn({
       </div>
       <SortableContext items={items.map(t => String(t.id))} strategy={verticalListSortingStrategy}>
         {items.map(t => (
-          <TaskCard key={t.id} t={t} dragEnabled={dragEnabled} onAdvance={() => onAdvance(t)} onDelete={() => onDelete(t.id)} />
+          <TaskCard key={t.id} t={t} dragEnabled={dragEnabled} onAdvance={() => onAdvance(t)} onEdit={() => onEdit(t)} onDelete={() => onDelete(t.id)} />
         ))}
       </SortableContext>
       <button onClick={onAdd} style={{ padding:"9px", borderRadius:9, border:"1px dashed var(--border-card)", background:"transparent", color:"var(--text-muted)", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:5, cursor:"pointer" }}>+ Add task</button>
@@ -257,11 +318,13 @@ function TaskCardBody({
   t,
   dragHandle,
   onAdvance,
+  onEdit,
   onDelete,
 }: {
   t: Task;
   dragHandle?: React.ReactNode;
   onAdvance?: () => void;
+  onEdit?: () => void;
   onDelete?: () => void;
 }) {
   const pr = PR[t.priority];
@@ -276,11 +339,12 @@ function TaskCardBody({
       </div>
       <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", marginBottom:7, lineHeight:1.4 }}>{t.title}</div>
       <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:10 }}>
-        {t.departmentName} · <span style={{ color:t.dueDate==="Today"?"var(--danger)":"var(--text-secondary)" }}>⏱ {t.dueDate}</span>
+        {t.departmentName || <span style={{ color:"var(--text-muted)", fontStyle:"italic" }}>No department</span>} · <span style={{ color:t.dueDate==="Today"?"var(--danger)":"var(--text-secondary)" }}>⏱ {t.dueDate}</span>
       </div>
       {onAdvance && onDelete && (
         <div style={{ display:"flex", gap:6 }}>
           <button onClick={onAdvance} style={{ flex:1, padding:"5px 7px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>{NL[t.status]}</button>
+          {onEdit && <button onClick={onEdit} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>}
           <button onClick={onDelete} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
         </div>
       )}
@@ -292,11 +356,13 @@ function TaskCard({
   t,
   dragEnabled,
   onAdvance,
+  onEdit,
   onDelete,
 }: {
   t: Task;
   dragEnabled: boolean;
   onAdvance: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: String(t.id), disabled: !dragEnabled });
@@ -321,7 +387,7 @@ function TaskCard({
   ) : undefined;
   return (
     <div ref={setNodeRef} style={style} className="hub-card">
-      <TaskCardBody t={t} dragHandle={handle} onAdvance={onAdvance} onDelete={onDelete} />
+      <TaskCardBody t={t} dragHandle={handle} onAdvance={onAdvance} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
 }

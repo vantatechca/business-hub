@@ -7,7 +7,7 @@ import type { TeamMember, Department } from "@/lib/types";
 const STATUSES = ["active","away","busy","offline"];
 const SCOL: Record<string,string> = { active:"var(--success)", away:"var(--warning)", busy:"var(--danger)", offline:"var(--text-muted)" };
 const TMMD = new Date().toISOString().slice(5, 10);
-const blank = { name:"", role:"", departmentId:0, departmentName:"", status:"active", birthday:"" };
+const blank = { name:"", role:"", departmentId: 0 as string | number, departmentName:"", status:"active", birthday:"" };
 
 export default function TeamPage() {
   const [team, setTeam]   = useState<TeamMember[]>([]);
@@ -33,12 +33,12 @@ export default function TeamPage() {
     (!df || m.departmentName === df)
   );
 
-  const openAdd = () => { setForm({ ...blank, departmentId: Number(depts[0]?.id) ?? 0, departmentName: depts[0]?.name ?? "" }); setShowAdd(true); };
+  const openAdd = () => { setForm({ ...blank, departmentId: depts[0]?.id ?? 0, departmentName: depts[0]?.name ?? "" }); setShowAdd(true); };
   const openEdit = (m: TeamMember) => { setEditing(m); setForm({ name:m.name, role:m.role, departmentId:m.departmentId, departmentName:m.departmentName ?? "", status:m.status, birthday:m.birthday ?? "" }); };
 
   const selectDept = (id: string | number) => {
-    const d = depts.find(d => Number(d.id) === id);
-    setForm(p => ({ ...p, departmentId: id as number, departmentName: d?.name ?? "" }));
+    const d = depts.find(x => String(x.id) === String(id));
+    setForm(p => ({ ...p, departmentId: id as number | string, departmentName: d?.name ?? "" }));
   };
 
   const save = async () => {
@@ -75,7 +75,7 @@ export default function TeamPage() {
       <FormField label="Role"><HubInput value={form.role} onChange={e => setForm(p => ({...p, role:e.target.value}))} placeholder="e.g. Senior Engineer" /></FormField>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
         <FormField label="Department">
-          <HubSelect value={form.departmentId} onChange={e => selectDept(+e.target.value)}>
+          <HubSelect value={form.departmentId} onChange={e => selectDept(e.target.value)}>
             {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </HubSelect>
         </FormField>
