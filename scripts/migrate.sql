@@ -164,3 +164,8 @@ CREATE INDEX IF NOT EXISTS idx_metric_updates_metric ON metric_updates(metric_id
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_depts_priority ON departments(priority_score DESC);
 CREATE INDEX IF NOT EXISTS idx_metrics_priority ON metrics(priority_score DESC);
+
+-- ── ADDITIVE MIGRATIONS (safe to re-run) ─────────────────────
+-- Birthday column on users. Added in a later phase for the birthdays feature.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birthday DATE;
+

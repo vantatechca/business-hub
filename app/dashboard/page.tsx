@@ -1,11 +1,16 @@
 "use client";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import CheckInGate from "@/components/CheckInGate";
 import AppLayout from "@/components/Layout";
 import { Card, Avatar, Sparkline, ProgressBar, Badge, formatMetricValue, useToast, ToastList } from "@/components/ui/shared";
 import { priorityColor, priorityLabel } from "@/lib/types";
 import type { Department, Metric } from "@/lib/types";
 import type { RevenueEntry, ExpenseEntry, Goal, Task } from "@/lib/types";
+import { Cake, AlertCircle } from "lucide-react";
+
+interface BdayUser { userId: string; name: string; initials: string; daysUntil: number; turningAge?: number }
+interface BdayResp { today: BdayUser[]; upcoming: BdayUser[]; recent: BdayUser[] }
 
 const PR: Record<string,{l:string;bg:string;c:string}> = {
   urgent:{l:"Urgent",bg:"rgba(248,113,113,.15)",c:"#f87171"},
@@ -22,6 +27,7 @@ export default function DashboardPage() {
   const [rev,     setRev]     = useState<RevenueEntry[]>([]);
   const [exp,     setExp]     = useState<ExpenseEntry[]>([]);
   const [ciStatus,setCiStatus]= useState<{missing:string[];rate:number}>({missing:[],rate:0});
+  const [bdays, setBdays]     = useState<BdayResp>({ today:[], upcoming:[], recent:[] });
   const [loading, setLoading] = useState(true);
   const { ts } = useToast();
 
@@ -34,13 +40,27 @@ export default function DashboardPage() {
       fetch("/api/revenue").then(r=>r.json()),
       fetch("/api/expenses").then(r=>r.json()),
       fetch("/api/checkin-status").then(r=>r.json()),
-    ]).then(([d,m,t,g,rv,ex,ci])=>{
+      fetch("/api/birthdays").then(r=>r.json()),
+    ]).then(([d,m,t,g,rv,ex,ci,bd])=>{
       setDepts(d.data??[]); setMetrics(m.data??[]); setTasks(t.data??[]);
       setGoals(g.data??[]); setRev(rv.data??[]); setExp(ex.data??[]);
       setCiStatus({ missing: ci.missing??[], rate: ci.rate??0 });
+      setBdays({ today: bd.today??[], upcoming: bd.upcoming??[], recent: bd.recent??[] });
       setLoading(false);
     });
   },[]);
+
+  // Filter today's birthdays through localStorage "greeted" state
+  const year = new Date().getFullYear();
+  const [greetedTick, setGreetedTick] = useState(0); // re-render trigger
+  const isGreeted = (uid: string) =>
+    typeof window !== "undefined" && localStorage.getItem(`bday_greeted_${uid}_${year}`) === "1";
+  void greetedTick;
+  const unreviewedBdays = bdays.today.filter(u => !isGreeted(u.userId));
+  const markGreeted = (uid: string) => {
+    localStorage.setItem(`bday_greeted_${uid}_${year}`, "1");
+    setGreetedTick(t => t + 1);
+  };
 
   const today    = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   const tRev     = rev.reduce((a,r)=>a+r.amount,0);
@@ -60,6 +80,97 @@ export default function DashboardPage() {
     <CheckInGate>
       <AppLayout title="Dashboard">
         <ToastList ts={ts}/>
+
+        {/* Top alerts — birthdays + missing check-ins */}
+        {(unreviewedBdays.length > 0 || ciStatus.missing.length > 0) && (
+          <div style={{ display: "grid", gridTemplateColumns: unreviewedBdays.length > 0 && ciStatus.missing.length > 0 ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 14 }}>
+            {unreviewedBdays.length > 0 && (
+              <Link
+                href="/birthdays"
+                style={{
+                  display: "flex", alignItems: "center", gap: 14,
+                  padding: "14px 18px", borderRadius: 12,
+                  background: "linear-gradient(135deg, rgba(91,142,248,.12), rgba(167,139,250,.12))",
+                  border: "1px solid rgba(91,142,248,.35)",
+                  textDecoration: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ width: 42, height: 42, borderRadius: 11, background: "rgba(91,142,248,.22)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Cake size={20} color="var(--accent)" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", letterSpacing: ".05em", textTransform: "uppercase", marginBottom: 2 }}>
+                    🎂 {unreviewedBdays.length} birthday{unreviewedBdays.length === 1 ? "" : "s"} today
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {unreviewedBdays.map(u => u.name).slice(0, 3).join(", ")}
+                    {unreviewedBdays.length > 3 && <> +{unreviewedBdays.length - 3} more</>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                    Tap to greet · won&apos;t dismiss until you mark them as greeted
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {unreviewedBdays.slice(0, 4).map(u => <Avatar key={u.userId} s={u.initials} size={30} />)}
+                </div>
+              </Link>
+            )}
+            {ciStatus.missing.length > 0 && (
+              <div
+                style={{
+                  display: "flex", alignItems: "center", gap: 14,
+                  padding: "14px 18px", borderRadius: 12,
+                  background: "linear-gradient(135deg, rgba(248,113,113,.12), rgba(251,191,36,.12))",
+                  border: "1px solid rgba(248,113,113,.35)",
+                }}
+              >
+                <div style={{ width: 42, height: 42, borderRadius: 11, background: "rgba(248,113,113,.22)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <AlertCircle size={20} color="var(--danger)" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "var(--danger)", letterSpacing: ".05em", textTransform: "uppercase", marginBottom: 2 }}>
+                    {ciStatus.missing.length} missing check-in{ciStatus.missing.length === 1 ? "" : "s"}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {ciStatus.missing.slice(0, 3).join(", ")}{ciStatus.missing.length > 3 ? ` +${ciStatus.missing.length - 3}` : ""}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                    Check who hasn&apos;t submitted today&apos;s check-in
+                  </div>
+                </div>
+                <Link
+                  href="/checkin"
+                  style={{ padding: "8px 16px", borderRadius: 8, background: "var(--danger)", color: "#fff", textDecoration: "none", fontSize: 12, fontWeight: 700, flexShrink: 0 }}
+                >
+                  View →
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Quick-greet buttons for today's birthdays (so users can dismiss right from the banner) */}
+        {unreviewedBdays.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            {unreviewedBdays.map(u => (
+              <button
+                key={u.userId}
+                onClick={() => markGreeted(u.userId)}
+                style={{
+                  padding: "5px 11px", borderRadius: 7,
+                  border: "1px solid var(--border-card)",
+                  background: "var(--bg-input)",
+                  color: "var(--text-secondary)",
+                  fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                }}
+              >
+                ✓ Greeted {u.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Status bar */}
         <div style={{display:"flex",gap:12,alignItems:"center",fontSize:11,color:"var(--text-secondary)",marginBottom:14,flexWrap:"wrap"}}>
