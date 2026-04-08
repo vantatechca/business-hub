@@ -7,7 +7,8 @@ import {
   Avatar, Card, ProgressBar, Modal, FormField, HubInput, HubSelect,
   ConfirmModal, useToast, ToastList, healthColor, Badge, EmptyState,
 } from "@/components/ui/shared";
-import type { Department, Task } from "@/lib/types";
+import type { Department, Task, TeamMember } from "@/lib/types";
+import { formatTaskDueDate, isTaskDueTodayOrPast } from "@/lib/types";
 import { ArrowLeft, X, Pencil, Plus, Loader2 } from "lucide-react";
 
 const PR: Record<string, { l: string; bg: string; c: string }> = {
@@ -27,12 +28,14 @@ const PRIORITIES = ["urgent", "high", "medium", "low"];
 const ICONS = ["💼","⚙️","📣","📊","👥","🔧","🎯","⭐","⚖️","🏗️","🌐","💡","🔬","📦","🎨","🧬","🚀","💰","📱","🎓"];
 const COLORS = ["#5b8ef8","#34d399","#a78bfa","#fbbf24","#f87171","#22d3ee","#84cc16","#fb923c","#e879f9","#6366f1"];
 
+const todayIso = () => new Date().toISOString().slice(0, 10);
 const blankTask = {
   id: undefined as number | undefined,
   title: "", priority: "medium", status: "todo",
   departmentId: 0 as number | string, departmentName: "",
-  assigneeInitials: "", dueDate: "Today",
+  assigneeInitials: "", dueDate: todayIso(),
 };
+const blankMember = { name: "", role: "", departmentId: "" as string | number, departmentName: "", status: "active", birthday: "" };
 
 export default function DepartmentDetailPage() {
   const router = useRouter();
@@ -41,6 +44,7 @@ export default function DepartmentDetailPage() {
 
   const [dept, setDept] = useState<Department | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const { ts, toast } = useToast();
@@ -50,6 +54,10 @@ export default function DepartmentDetailPage() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
+
+  // Inline "add member" modal state (reachable from the Assignee dropdown)
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [memberForm, setMemberForm] = useState<typeof blankMember>({ ...blankMember });
 
   // Edit dept drawer state
   const [showEditDept, setShowEditDept] = useState(false);
@@ -65,11 +73,13 @@ export default function DepartmentDetailPage() {
     Promise.all([
       fetch(`/api/departments/${deptId}`).then(r => r.json()),
       fetch("/api/tasks").then(r => r.json()),
+      fetch("/api/team").then(r => r.json()),
     ])
-      .then(([d, t]) => {
+      .then(([d, t, m]) => {
         if (d.error || !d.data) { setNotFound(true); setLoading(false); return; }
         setDept(d.data);
         setTasks(t.data ?? []);
+        setTeam(m.data ?? []);
         setLoading(false);
       })
       .catch(() => { setLoading(false); toast("Failed to load", "er"); });
@@ -90,8 +100,46 @@ export default function DepartmentDetailPage() {
       ...blankTask, status,
       departmentId: dept.id as number | string,
       departmentName: dept.name,
+      dueDate: todayIso(),
     });
     setShowAddTask(true);
+  };
+
+  // Add Member flow — opens inline modal, saves to /api/team
+  const openAddMember = () => {
+    if (!dept) return;
+    setMemberForm({
+      ...blankMember,
+      departmentId: dept.id as number | string,
+      departmentName: dept.name,
+    });
+    setShowAddMember(true);
+  };
+
+  const saveMember = async () => {
+    if (!memberForm.name || !memberForm.role) {
+      return toast("Name and role are required", "er");
+    }
+    const initials = memberForm.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "??";
+    const res = await fetch("/api/team", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...memberForm, initials }),
+    });
+    if (!res.ok) return toast("Failed to add member", "er");
+    const teamRes = await fetch("/api/team").then(r => r.json());
+    setTeam(teamRes.data ?? []);
+    setTaskForm(p => ({ ...p, assigneeInitials: initials }));
+    setShowAddMember(false);
+    toast(`${memberForm.name} added`);
+  };
+
+  const selectMemberInTaskForm = (initials: string) => {
+    if (initials === "__add_new__") {
+      openAddMember();
+      return;
+    }
+    setTaskForm(p => ({ ...p, assigneeInitials: initials }));
   };
   const openEditTask = (t: Task) => {
     setEditingTask(t);
@@ -212,11 +260,40 @@ export default function DepartmentDetailPage() {
         </FormField>
       </div>
       <FormField label="Due Date">
-        <HubInput value={taskForm.dueDate} onChange={e => setTaskForm(p => ({ ...p, dueDate: e.target.value }))} placeholder="Today, Dec 15…" />
+        <HubInput
+          type="date"
+          value={/^\d{4}-\d{2}-\d{2}$/.test(taskForm.dueDate) ? taskForm.dueDate : ""}
+          onChange={e => setTaskForm(p => ({ ...p, dueDate: e.target.value }))}
+        />
       </FormField>
-      <FormField label="Assignee Initials">
-        <HubInput value={taskForm.assigneeInitials} onChange={e => setTaskForm(p => ({ ...p, assigneeInitials: e.target.value.toUpperCase().slice(0, 2) }))} placeholder="AC" maxLength={2} style={{ textTransform: "uppercase" }} />
+      <FormField label="Assignee">
+        <HubSelect
+          value={taskForm.assigneeInitials}
+          onChange={e => selectMemberInTaskForm(e.target.value)}
+        >
+          <option value="">— Unassigned —</option>
+          {team.map(m => (
+            <option key={m.id} value={m.initials}>
+              {m.name} ({m.initials}){m.departmentName ? ` · ${m.departmentName}` : ""}
+            </option>
+          ))}
+          <option value="__add_new__">+ Add new team member…</option>
+        </HubSelect>
       </FormField>
+    </>
+  );
+
+  const memberFormJsx = (
+    <>
+      <FormField label="Full Name">
+        <HubInput value={memberForm.name} onChange={e => setMemberForm(p => ({ ...p, name: e.target.value }))} placeholder="First Last" />
+      </FormField>
+      <FormField label="Role">
+        <HubInput value={memberForm.role} onChange={e => setMemberForm(p => ({ ...p, role: e.target.value }))} placeholder="e.g. Senior Engineer" />
+      </FormField>
+      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+        Will be added to <strong style={{ color: "var(--text-primary)" }}>{dept?.name}</strong>
+      </div>
     </>
   );
 
@@ -386,7 +463,7 @@ export default function DepartmentDetailPage() {
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginBottom: 7, lineHeight: 1.4 }}>{t.title}</div>
                       <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 10 }}>
-                        <span style={{ color: t.dueDate === "Today" ? "var(--danger)" : "var(--text-secondary)" }}>⏱ {t.dueDate}</span>
+                        <span style={{ color: isTaskDueTodayOrPast(t.dueDate) ? "var(--danger)" : "var(--text-secondary)" }}>⏱ {formatTaskDueDate(t.dueDate)}</span>
                       </div>
                       <div style={{ display: "flex", gap: 5 }}>
                         <button
@@ -448,6 +525,14 @@ export default function DepartmentDetailPage() {
         name={deletingTask?.title ?? ""}
         entity="task"
       />
+
+      <Modal open={showAddMember} onClose={() => setShowAddMember(false)} title="Add Team Member">
+        {memberFormJsx}
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 14 }}>
+          <button onClick={() => setShowAddMember(false)} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+          <button onClick={saveMember} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Add Member</button>
+        </div>
+      </Modal>
 
       {/* Edit Department side drawer */}
       {showEditDept && (

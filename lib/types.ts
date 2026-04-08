@@ -107,6 +107,30 @@ export function getInitials(name: string): string {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
+// Format a task dueDate for display on cards. Accepts either ISO YYYY-MM-DD
+// (from the new date picker) or a legacy free-text string ("Today", "Dec 10").
+export function formatTaskDueDate(raw: string | undefined | null): string {
+  if (!raw) return "—";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const d = new Date(raw + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Tomorrow";
+  if (diffDays === -1) return "Yesterday";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Is this dueDate today or overdue (for red highlighting)?
+export function isTaskDueTodayOrPast(raw: string | undefined | null): boolean {
+  if (!raw) return false;
+  if (raw === "Today") return true;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const d = new Date(raw + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return d.getTime() <= today.getTime();
+}
+
 // ── LEGACY V1 COMPAT TYPES (used by old pages) ────────────────────────────────
 export interface TeamMember {
   id: number; name: string; initials: string; role: string;
