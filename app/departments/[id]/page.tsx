@@ -42,9 +42,11 @@ const blankTask = {
   assigneeName: "",
   dueDate: todayIso(),
 };
-// "Department role" here is the user's top-level system role, not the junction
-// table's per-dept role. Form dropdown is kept in sync with the 5-tier system.
-const blankMember = { userId: "", role: "member" as "admin" | "manager" | "lead" | "member" };
+// "Department role" is the per-department role in the user_departments junction
+// table — completely INDEPENDENT of the user's global role on the /team page.
+// Inside a department a user is either a "Team Lead" or a "Member"; one
+// department can have multiple of each.
+const blankMember = { userId: "", roleInDept: "member" as "lead" | "member" };
 
 export default function DepartmentDetailPage() {
   const router = useRouter();
@@ -124,14 +126,22 @@ export default function DepartmentDetailPage() {
   const myRevenue  = dept ? revenue.filter(matchesDept) : [];
   const myExpenses = dept ? expenses.filter(matchesDept) : [];
 
-  // Team scoped to this department. Admin-tier roles sort first so the "team lead"
-  // appears on top; members are sorted alphabetically after.
-  const roleOrder: Record<string, number> = { super_admin: 0, admin: 1, manager: 2, leader: 2, lead: 3, member: 4 };
-  const myTeam = dept
+  // Team scoped to this department, sourced from the user_departments junction
+  // (delivered by /api/team as the `departments` array on each user). Per-dept
+  // role wins: Team Leads sort first, members after, alphabetical within each
+  // group. The user's global role is irrelevant here.
+  const myTeam: Array<TeamMember & { roleInDept: "lead" | "member" }> = dept
     ? team
-        .filter(m => String((m as unknown as { departmentId?: string }).departmentId ?? "") === String(dept.id)
-          || (m.departmentName ?? "") === dept.name)
-        .sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9) || a.name.localeCompare(b.name))
+        .map(m => {
+          const here = (m.departments ?? []).find(d => String(d.id) === String(dept.id));
+          if (!here) return null;
+          return { ...m, roleInDept: (here.roleInDept === "lead" ? "lead" : "member") as "lead" | "member" };
+        })
+        .filter((m): m is TeamMember & { roleInDept: "lead" | "member" } => !!m)
+        .sort((a, b) => {
+          if (a.roleInDept !== b.roleInDept) return a.roleInDept === "lead" ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        })
     : [];
 
   // ── Task CRUD ──────────────────────────────────────
@@ -147,10 +157,10 @@ export default function DepartmentDetailPage() {
   };
 
   // Add Member flow — picks an EXISTING user from the global team list and
-  // assigns them to this department. New users are created on the /team page,
-  // not here. This used to POST /api/team (create), but that made it easy to
-  // accidentally duplicate people. Now we PATCH /api/team/[id] to set their
-  // department_id (+ optional role change).
+  // adds a row to user_departments for this department. New users are created
+  // on the /team page, not here. The per-dept role (Team Lead / Member) is
+  // independent of the user's global role; the same user can be a Member
+  // here and a Team Lead in another department, and so on.
   const openAddMember = () => {
     if (!dept) return;
     setMemberForm({ ...blankMember });
@@ -160,49 +170,65 @@ export default function DepartmentDetailPage() {
   const saveMember = async () => {
     if (!dept) return;
     if (!memberForm.userId) return toast("Select a member to assign", "er");
-    const res = await fetch(`/api/team/${memberForm.userId}`, {
-      method: "PATCH",
+    const res = await fetch(`/api/departments/${dept.id}/members`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        departmentId: dept.id,
-        role: memberForm.role,
+        userId: memberForm.userId,
+        roleInDept: memberForm.roleInDept,
       }),
     });
-    if (!res.ok) return toast("Failed to assign member", "er");
-    // Refresh the team list so the new assignment appears on this page and
-    // everywhere else that reads users.
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      return toast(e.error || "Failed to assign member", "er");
+    }
+    // Refresh the team list so the new junction row appears here.
     const teamRes = await fetch("/api/team").then(r => r.json());
     setTeam(teamRes.data ?? []);
     setShowAddMember(false);
     const picked = team.find(m => String(m.id) === memberForm.userId);
-    toast(`${picked?.name ?? "Member"} assigned to ${dept.name}`);
+    toast(`${picked?.name ?? "Member"} added as ${memberForm.roleInDept === "lead" ? "Team Lead" : "Member"}`);
   };
 
-  // Unassign a member from THIS department. We don't deactivate or delete the
-  // user — just null out their department_id so they go back to the global
-  // pool and can be reassigned later from /team.
+  // Remove a single user_departments row for this user + this department.
+  // Doesn't touch the user record itself or any other department they belong to.
   const removeMember = async (m: TeamMember) => {
     if (!dept) return;
-    const res = await fetch(`/api/team/${m.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ departmentId: null }),
+    const res = await fetch(`/api/departments/${dept.id}/members?userId=${m.id}`, {
+      method: "DELETE",
     });
-    if (!res.ok) return toast("Failed to remove member", "er");
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      return toast(e.error || "Failed to remove member", "er");
+    }
     const teamRes = await fetch("/api/team").then(r => r.json());
     setTeam(teamRes.data ?? []);
     toast(`${m.name} removed from ${dept.name}`);
   };
 
-  // When a user is picked in the dropdown, default the role dropdown to
-  // their CURRENT role so the admin doesn't accidentally downgrade them.
+  // When a user is picked in the dropdown, default the per-dept role to
+  // "member" — admins can flip to Team Lead before saving.
   const pickMemberForAssign = (userId: string) => {
-    const picked = team.find(m => String(m.id) === userId);
-    setMemberForm(p => ({
-      ...p,
-      userId,
-      role: ((picked?.role === "leader" ? "manager" : picked?.role) as "admin" | "manager" | "lead" | "member") ?? "member",
-    }));
+    setMemberForm(p => ({ ...p, userId, roleInDept: p.roleInDept || "member" }));
+  };
+
+  // Toggle a member's per-dept role between Team Lead and Member without
+  // removing them from the department. The POST endpoint upserts on
+  // (user_id, department_id), so this is the same call used to add a member.
+  const changeMemberRoleInDept = async (m: TeamMember, next: "lead" | "member") => {
+    if (!dept) return;
+    const res = await fetch(`/api/departments/${dept.id}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: m.id, roleInDept: next }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      return toast(e.error || "Failed to update role", "er");
+    }
+    const teamRes = await fetch("/api/team").then(r => r.json());
+    setTeam(teamRes.data ?? []);
+    toast(`${m.name} → ${next === "lead" ? "Team Lead" : "Member"}`);
   };
 
   const selectMemberInTaskForm = (userId: string) => {
@@ -366,11 +392,11 @@ export default function DepartmentDetailPage() {
     </>
   );
 
-  // Candidates for assignment: everyone on the team who isn't already in THIS
-  // department. Showing the already-assigned set would just be a no-op from
-  // the admin's perspective so it's cleaner to hide them.
+  // Candidates for assignment: everyone on the team who isn't already a member
+  // of THIS department (junction table). Hiding them keeps the picker clean —
+  // admins can promote/demote existing members directly from the table row.
   const assignableMembers = team.filter(m => {
-    const alreadyHere = String((m as unknown as { departmentId?: string }).departmentId ?? "") === String(dept?.id ?? "");
+    const alreadyHere = (m.departments ?? []).some(d => String(d.id) === String(dept?.id ?? ""));
     return !alreadyHere;
   });
 
@@ -384,24 +410,23 @@ export default function DepartmentDetailPage() {
           <option value="">— Select a team member —</option>
           {assignableMembers.map(m => (
             <option key={m.id} value={String(m.id)}>
-              {m.name} ({m.role}){m.departmentName ? ` · currently in ${m.departmentName}` : ""}
+              {m.name}
+              {m.departments && m.departments.length > 0 ? ` · ${m.departments.map(d => d.name).join(", ")}` : ""}
             </option>
           ))}
         </HubSelect>
       </FormField>
-      <FormField label="Role">
+      <FormField label="Role in this department">
         <HubSelect
-          value={memberForm.role}
-          onChange={e => setMemberForm(p => ({ ...p, role: e.target.value as "admin" | "manager" | "lead" | "member" }))}
+          value={memberForm.roleInDept}
+          onChange={e => setMemberForm(p => ({ ...p, roleInDept: e.target.value as "lead" | "member" }))}
         >
-          <option value="admin">Admin</option>
-          <option value="manager">Manager</option>
-          <option value="lead">Lead</option>
           <option value="member">Member</option>
+          <option value="lead">Team Lead</option>
         </HubSelect>
       </FormField>
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-        Will be assigned to <strong style={{ color: "var(--text-primary)" }}>{dept?.name}</strong>.
+        Adding to <strong style={{ color: "var(--text-primary)" }}>{dept?.name}</strong>. The role here is independent of the user&apos;s global role on the Team page — multiple Team Leads and Members can be assigned to the same department.
         To add a brand-new person, go to the <strong style={{ color: "var(--text-primary)" }}>Team</strong> page first.
       </div>
     </>
@@ -677,7 +702,7 @@ export default function DepartmentDetailPage() {
       )}
 
       {tab === "team" && (
-        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} onRemoveMember={removeMember} />
+        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} onRemoveMember={removeMember} onChangeRole={changeMemberRoleInDept} />
       )}
 
       {tab === "expenses" && (
@@ -861,33 +886,34 @@ function DeptMetricsTab({ metrics, assignments, departmentName }: { metrics: Met
   );
 }
 
+type DeptMember = TeamMember & { roleInDept: "lead" | "member" };
+
 function DeptTeamTab({
   team,
+  departmentId,
   departmentName,
   onAddMember,
   onRemoveMember,
+  onChangeRole,
 }: {
-  team: TeamMember[];
+  team: DeptMember[];
   departmentId: string;
   departmentName: string;
   onAddMember: () => void;
   onRemoveMember: (m: TeamMember) => void;
+  // Toggle between Team Lead and Member without removing the user from the
+  // department. Hits the same POST endpoint with ON CONFLICT UPDATE.
+  onChangeRole: (m: TeamMember, next: "lead" | "member") => void;
 }) {
-  const roleColor: Record<string, string> = {
-    super_admin: "var(--danger)",
-    admin: "var(--violet)",
-    manager: "var(--warning)",
-    leader: "var(--warning)",
-    lead: "var(--accent)",
-    member: "var(--accent)",
-  };
-  const statusColor: Record<string, string> = { active: "var(--success)", away: "var(--warning)", busy: "var(--danger)", offline: "var(--text-muted)" };
+  void departmentId;
   const [confirming, setConfirming] = useState<TeamMember | null>(null);
+  const leads   = team.filter(m => m.roleInDept === "lead").length;
+  const members = team.length - leads;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>
-          {departmentName} · {team.length} member{team.length === 1 ? "" : "s"}
+          {departmentName} · {leads} team lead{leads === 1 ? "" : "s"} · {members} member{members === 1 ? "" : "s"}
         </div>
         <button
           onClick={onAddMember}
@@ -897,54 +923,53 @@ function DeptTeamTab({
         </button>
       </div>
       {team.length === 0 ? (
-        <EmptyState icon="👥" title="No members yet" desc="Add members so they appear here and across the app." />
+        <EmptyState icon="👥" title="No members yet" desc="Add team leads and members so they appear here." />
       ) : (
         <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="hub-table">
             <thead>
-              <tr>{["Member", "Role", "Status", ""].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>{["Member", "Role", ""].map(h => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {team.map(m => (
-                <tr key={m.id}>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                      <Avatar s={m.initials} size={30} />
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
-                          {m.name}
-                          {(m.role === "leader" || m.role === "manager" || m.role === "lead") && (
-                            <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 4, background: "var(--warning-bg)", color: "var(--warning)", letterSpacing: ".06em", textTransform: "uppercase" }}>
-                              {m.role === "lead" ? "Lead" : "Team Lead"}
-                            </span>
-                          )}
+              {team.map(m => {
+                const isLead = m.roleInDept === "lead";
+                return (
+                  <tr key={m.id}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <Avatar s={m.initials} size={30} />
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{m.name}</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{m.email}</div>
                         </div>
-                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{m.email}</div>
                       </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, fontWeight: 700, textTransform: "capitalize", background: `${roleColor[m.role]}18`, color: roleColor[m.role] }}>
-                      {m.role}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor[m.status] }} />
-                      <span style={{ fontSize: 11, color: statusColor[m.status], fontWeight: 600, textTransform: "capitalize" }}>{m.status}</span>
-                    </div>
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <button
-                      onClick={() => setConfirming(m)}
-                      title="Remove from department"
-                      style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", background: isLead ? "var(--warning-bg)" : "var(--accent-bg)", color: isLead ? "var(--warning)" : "var(--accent)" }}>
+                        {isLead ? "Team Lead" : "Member"}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div style={{ display: "inline-flex", gap: 5 }}>
+                        <button
+                          onClick={() => onChangeRole(m, isLead ? "member" : "lead")}
+                          title={isLead ? "Demote to Member" : "Promote to Team Lead"}
+                          style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          {isLead ? "Make Member" : "Make Team Lead"}
+                        </button>
+                        <button
+                          onClick={() => setConfirming(m)}
+                          title="Remove from department"
+                          style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

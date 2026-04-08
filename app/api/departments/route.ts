@@ -7,10 +7,18 @@ export async function GET() {
     // one FK won't fail the whole row (e.g. a task.department_id that's
     // TEXT while users.department_id is UUID still returns valid numbers
     // for the joinable tables).
+    // member_count comes from the user_departments junction table now —
+    // members and team leads are equally counted, and the legacy
+    // users.department_id column is no longer authoritative.
     const rows = await sql`
       SELECT d.*,
         (SELECT COUNT(*)::int FROM metrics m WHERE m.department_id::text = d.id::text) AS metric_count,
-        (SELECT COUNT(*)::int FROM users u WHERE u.department_id::text = d.id::text AND u.is_active = TRUE AND u.role != 'super_admin') AS member_count,
+        (SELECT COUNT(*)::int
+           FROM user_departments ud
+           JOIN users u ON u.id = ud.user_id
+           WHERE ud.department_id::text = d.id::text
+             AND u.is_active = TRUE
+             AND u.role != 'super_admin') AS member_count,
         (SELECT COUNT(*)::int FROM tasks t WHERE t.department_id::text = d.id::text) AS task_count
       FROM departments d
       ORDER BY d.sort_order ASC, d.priority_score DESC
