@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Card, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState, ProgressBar, formatMetricValue, priorityColor, priorityLabel, healthColor } from "@/components/ui/shared";
-import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
+import { Sortable, useSortableItem, DragHandle, overlayCardStyle } from "@/components/ui/Sortable";
+import { GripVertical } from "lucide-react";
 import MetricHistoryDrawer from "@/components/MetricHistoryDrawer";
 import type { Metric, Department } from "@/lib/types";
 import { metricDelta } from "@/lib/types";
@@ -187,7 +188,13 @@ export default function MetricsPage() {
             <thead>
               <tr>{[dragEnabled ? "" : null,"Metric","Department","Type","Current","Target","Progress","Priority",""].filter(h=>h!==null).map((h,i) => <th key={i}>{h}</th>)}</tr>
             </thead>
-            <Sortable items={filtered} onReorder={handleReorder} strategy="vertical" disabled={!dragEnabled}>
+            <Sortable
+              items={filtered}
+              onReorder={handleReorder}
+              strategy="vertical"
+              disabled={!dragEnabled}
+              renderOverlay={m => <MetricRowPreview m={m} />}
+            >
               <tbody>
                 {filtered.map(m => (
                   <MetricRow
@@ -300,5 +307,41 @@ function MetricRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+// DragOverlay renders outside the table via a portal, so a <tr> clone would
+// lose its table layout. Render a div-based card instead that summarizes the
+// metric being dragged.
+function MetricRowPreview({ m }: { m: Metric }) {
+  const pc = priorityColor(m.priorityScore);
+  return (
+    <div
+      className="hub-card"
+      style={{
+        ...overlayCardStyle,
+        padding: "12px 16px",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        minWidth: 420,
+        background: "var(--bg-card)",
+      }}
+    >
+      <GripVertical size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: m.departmentColor ?? "var(--accent)" }} />
+          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{m.departmentName}</span>
+        </div>
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: "var(--accent)", flexShrink: 0 }}>
+        {formatMetricValue(m.currentValue, m.unit)}
+      </div>
+      <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${pc}18`, color: pc, flexShrink: 0 }}>
+        {m.priorityScore} · {priorityLabel(m.priorityScore)}
+      </span>
+    </div>
   );
 }
