@@ -11,6 +11,8 @@ import type { Department, Task, TeamMember, Metric, RevenueEntry, ExpenseEntry }
 import { formatTaskDueDate, isTaskDueTodayOrPast, PRIORITY_OPTIONS, priorityToOption, priorityLabel, priorityColor, formatMetricValue } from "@/lib/types";
 import { formatValue } from "@/components/ui/shared";
 import DueAlertBanner from "@/components/DueAlertBanner";
+import { convert, formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
+import { useCurrency } from "@/lib/CurrencyContext";
 import { ArrowLeft, X, Pencil, Plus, Loader2 } from "lucide-react";
 
 const PR: Record<string, { l: string; bg: string; c: string }> = {
@@ -906,15 +908,25 @@ function FinanceTab({
   accent: string;
   title: string;
 }) {
+  // Tab display follows the global currency — no per-tab override here, so
+  // flipping the header currency switcher updates the dept expense/revenue
+  // tabs in real time alongside the rest of the site.
+  const { currency: displayCurrency } = useCurrency();
+
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({
     amount: 0,
+    currency: "USD" as Currency,
     description: "",
     month: MONTHS_SHORT[new Date().getMonth()],
     year: new Date().getFullYear(),
   });
 
   const endpoint = kind === "revenue" ? "/api/revenue" : "/api/expenses";
+
+  // Convert each entry's stored amount to the global display currency.
+  const amountIn = (e: RevenueEntry | ExpenseEntry) =>
+    convert(e.amount, ((e as { currency?: string }).currency as Currency) || "USD", displayCurrency);
 
   const save = async () => {
     if (!form.amount || !form.description) return toast("Amount and description required", "er");
@@ -929,7 +941,7 @@ function FinanceTab({
     });
     if (!res.ok) return toast("Failed to add", "er");
     setShowAdd(false);
-    setForm({ amount: 0, description: "", month: MONTHS_SHORT[new Date().getMonth()], year: new Date().getFullYear() });
+    setForm({ amount: 0, currency: displayCurrency, description: "", month: MONTHS_SHORT[new Date().getMonth()], year: new Date().getFullYear() });
     onReload();
     toast("Entry added");
   };
@@ -940,16 +952,17 @@ function FinanceTab({
     toast("Entry deleted", "er");
   };
 
-  const total = entries.reduce((a, e) => a + e.amount, 0);
+  const total = entries.reduce((a, e) => a + amountIn(e), 0);
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>
-          {title} · <span style={{ color: accent }}>{formatValue(total, "currency")}</span>
+          {title} · <span style={{ color: accent }}>{formatMoney(total, displayCurrency)}</span>
+          <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", marginLeft: 6 }}>({displayCurrency})</span>
         </div>
         <button
-          onClick={() => setShowAdd(true)}
+          onClick={() => { setForm(p => ({ ...p, currency: displayCurrency })); setShowAdd(true); }}
           style={{ padding: "6px 12px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
         >
           <Plus size={12} /> Add Entry
@@ -964,30 +977,51 @@ function FinanceTab({
               <tr>{["Month", "Description", "Amount", ""].map(h => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {entries.map(e => (
-                <tr key={e.id}>
-                  <td style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{e.month} {e.year}</td>
-                  <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{e.description}</td>
-                  <td style={{ fontSize: 13, fontWeight: 700, color: accent }}>{formatValue(e.amount, "currency")}</td>
-                  <td>
-                    <button
-                      onClick={() => del(e.id)}
-                      style={{ padding: "3px 8px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, cursor: "pointer" }}
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {entries.map(e => {
+                const entryCurrency = (((e as { currency?: string }).currency) as Currency) || "USD";
+                const converted = amountIn(e);
+                const showConversion = entryCurrency !== displayCurrency;
+                return (
+                  <tr key={e.id}>
+                    <td style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{e.month} {e.year}</td>
+                    <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{e.description}</td>
+                    <td>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: accent }}>
+                        {formatMoney(converted, displayCurrency)}
+                      </div>
+                      {showConversion && (
+                        <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                          {formatMoney(e.amount, entryCurrency)} {entryCurrency}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => del(e.id)}
+                        style={{ padding: "3px 8px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, cursor: "pointer" }}
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title={`Add ${kind === "revenue" ? "Revenue" : "Expense"} · ${departmentName}`}>
-        <FormField label="Amount ($)">
-          <HubInput type="number" value={form.amount || ""} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} placeholder="50000" />
-        </FormField>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+          <FormField label="Amount">
+            <HubInput type="number" value={form.amount || ""} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} placeholder="50000" />
+          </FormField>
+          <FormField label="Currency">
+            <HubSelect value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value as Currency }))}>
+              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </HubSelect>
+          </FormField>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <FormField label="Month">
             <HubSelect value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))}>
