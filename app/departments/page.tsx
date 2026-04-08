@@ -185,7 +185,7 @@ export default function DepartmentsPage() {
           disabled={!canReorder || !!q}
           renderOverlay={d => <DeptCardPreview d={d} />}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }} className="stagger-children">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 16 }} className="stagger-children">
             {filteredDepts.map(d => (
               <DeptCard
                 key={d.id}
@@ -246,7 +246,7 @@ function DeptCardBody({
         background: "var(--bg-card)",
         border: "1px solid var(--border-card)",
         borderRadius: 14,
-        padding: "16px 18px",
+        padding: "20px 22px",
         transition: "border-color .15s ease, box-shadow .15s ease, transform .12s ease",
       }}
       className="dept-card"
@@ -268,20 +268,20 @@ function DeptCardBody({
           <GripVertical size={14} />
         </div>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
         <div
           style={{
-            width: 40, height: 40, borderRadius: 11,
+            width: 46, height: 46, borderRadius: 12,
             background: `${d.color}1c`,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 19, flexShrink: 0,
+            fontSize: 22, flexShrink: 0,
           }}
         >
           {d.icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
-          <div style={{ fontSize: 11, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 3 }}>
             {d.description ?? ""}
           </div>
         </div>
