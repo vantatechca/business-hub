@@ -95,7 +95,7 @@ export default function DashboardPage() {
               <Link
                 href="/birthdays"
                 style={{
-                  display: "flex", alignItems: "flex-start", gap: 14,
+                  display: "flex", alignItems: "center", gap: 14,
                   padding: "14px 18px", borderRadius: 12,
                   background: "linear-gradient(135deg, rgba(91,142,248,.12), rgba(167,139,250,.12))",
                   border: "1px solid rgba(91,142,248,.35)",
@@ -103,20 +103,20 @@ export default function DashboardPage() {
                   cursor: "pointer",
                 }}
               >
-                <div style={{ width: 42, height: 42, borderRadius: 11, background: "rgba(91,142,248,.22)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 11, background: "rgba(91,142,248,.22)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <Cake size={20} color="var(--accent)" />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", letterSpacing: ".05em", textTransform: "uppercase", marginBottom: 2 }}>
                     🎂 {unreviewedBdays.length} birthday{unreviewedBdays.length === 1 ? "" : "s"} today
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.45 }}>
-                    {unreviewedBdays.map(u => u.name).join(", ")}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                    Tap to greet · won&apos;t dismiss until you mark them as greeted
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                    Tap to view and greet · won&apos;t dismiss until marked as greeted
                   </div>
                 </div>
+                <span style={{ padding: "8px 16px", borderRadius: 8, background: "var(--accent)", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                  View →
+                </span>
               </Link>
             )}
             {ciStatus.missing.length > 0 && (

@@ -40,12 +40,12 @@ export default function TeamPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<TeamMember | null>(null);
   const [deleting, setDeleting] = useState<TeamMember | null>(null);
-  const [resetting, setResetting] = useState<TeamMember | null>(null);
   const [form, setForm]   = useState<typeof blank>({ ...blank });
   const [hov, setHov]     = useState<string | null>(null);
-  // Modal shown after adding a member OR resetting their password —
-  // contains the one-time credentials the admin needs to share.
-  const [credentials, setCredentials] = useState<{ email: string; password: string; name: string; kind: "created" | "reset" } | null>(null);
+  // Credentials modal shown ONCE after adding a new member — contains the
+  // auto-generated email + temporary password the admin needs to share.
+  // Password resets live on /users; this modal is create-only here.
+  const [credentials, setCredentials] = useState<{ email: string; password: string; name: string } | null>(null);
   const { ts, toast } = useToast();
 
   const load = () => Promise.all([
@@ -104,7 +104,6 @@ export default function TeamPage() {
       name: form.name,
       email: d.email,
       password: d.tempPassword,
-      kind: "created",
     });
   };
 
@@ -127,24 +126,6 @@ export default function TeamPage() {
     await fetch(`/api/team/${deleting.id}`, { method: "DELETE" });
     await load();
     toast("Member deactivated", "wa");
-  };
-
-  const resetPassword = async () => {
-    if (!resetting) return;
-    const res = await fetch(`/api/users/${resetting.id}/reset-password`, { method: "POST" });
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      setResetting(null);
-      return toast(e.error || "Reset failed", "er");
-    }
-    const d = await res.json();
-    setCredentials({
-      name: resetting.name,
-      email: resetting.email,
-      password: d.tempPassword,
-      kind: "reset",
-    });
-    setResetting(null);
   };
 
   const toggleCI = async (m: TeamMember) => {
@@ -275,7 +256,6 @@ export default function TeamPage() {
                     {isAdmin && (
                       <div style={{ display: "flex", gap: 5 }}>
                         <button onClick={() => openEdit(m)} style={{ padding: "4px 9px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}>Edit</button>
-                        <button onClick={() => setResetting(m)} style={{ padding: "4px 9px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }} title="Reset password">🔑</button>
                         <button onClick={() => setDeleting(m)} style={{ padding: "4px 7px", borderRadius: 7, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, cursor: "pointer" }}>✕</button>
                       </div>
                     )}
@@ -307,7 +287,7 @@ export default function TeamPage() {
       <Modal
         open={!!credentials}
         onClose={() => setCredentials(null)}
-        title={credentials?.kind === "reset" ? "Password Reset" : "Member Created"}
+        title="Member Created"
         width={440}
       >
         <div style={{ textAlign: "center", padding: "8px 0" }}>
@@ -342,14 +322,6 @@ export default function TeamPage() {
         onConfirm={del}
         name={deleting?.name ?? ""}
         entity="member (will be deactivated, not deleted)"
-      />
-
-      <ConfirmModal
-        open={!!resetting}
-        onClose={() => setResetting(null)}
-        onConfirm={resetPassword}
-        name={`${resetting?.name}'s password`}
-        entity="password reset (a new temporary password will be generated)"
       />
     </AppLayout>
   );

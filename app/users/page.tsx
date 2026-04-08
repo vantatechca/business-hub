@@ -21,8 +21,12 @@ export default function UsersPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
+  const [resetting, setResetting] = useState<User | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
-  const [newUserPw, setNewUserPw] = useState<string | null>(null);
+  // Credentials modal shown once after creating a user or resetting a
+  // password. Holds the email + plaintext password the admin needs to share.
+  // The password is never retrievable after this modal is dismissed.
+  const [credentials, setCredentials] = useState<{ email: string; password: string; name: string; kind: "created" | "reset" } | null>(null);
   const { ts, toast } = useToast();
 
   const load = () =>
@@ -42,8 +46,14 @@ export default function UsersPage() {
     const res = await fetch("/api/users", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(form) });
     if (!res.ok) { const e = await res.json(); return toast(e.error || "Failed", "er"); }
     const d = await res.json();
-    setNewUserPw(d.tempPassword ?? form.password);
-    await load(); setShowAdd(false); toast(`${form.name} added`);
+    await load();
+    setShowAdd(false);
+    setCredentials({
+      name: form.name,
+      email: form.email,
+      password: d.tempPassword ?? form.password,
+      kind: "created",
+    });
   };
 
   const update = async () => {
@@ -61,6 +71,27 @@ export default function UsersPage() {
     if (!deleting) return;
     await fetch(`/api/users/${deleting.id}`, { method:"DELETE" });
     await load(); toast("User deactivated", "wa");
+  };
+
+  // Admin-only: regenerate a temp password for the selected user. The API
+  // returns the plaintext once; we hand it straight to the credentials
+  // modal so the admin can copy it.
+  const resetPassword = async () => {
+    if (!resetting) return;
+    const res = await fetch(`/api/users/${resetting.id}/reset-password`, { method: "POST" });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setResetting(null);
+      return toast(e.error || "Reset failed", "er");
+    }
+    const d = await res.json();
+    setCredentials({
+      name: resetting.name,
+      email: resetting.email,
+      password: d.tempPassword,
+      kind: "reset",
+    });
+    setResetting(null);
   };
 
   const openEdit = (u: User) => {
@@ -172,6 +203,7 @@ export default function UsersPage() {
                     {isAdmin && (
                       <div style={{ display:"flex", gap:5 }}>
                         <button onClick={() => openEdit(u)} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
+                        <button onClick={() => setResetting(u)} title="Reset password" style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>🔑</button>
                         {u.isActive && <button onClick={() => setDeleting(u)} style={{ padding:"4px 7px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>}
                       </div>
                     )}
@@ -199,17 +231,49 @@ export default function UsersPage() {
         </div>
       </Modal>
 
-      {/* New user password reveal */}
-      <Modal open={!!newUserPw} onClose={() => setNewUserPw(null)} title="User Created" width={400}>
-        <div style={{ textAlign:"center", padding:"8px 0" }}>
-          <div style={{ fontSize:36, marginBottom:12 }}>🔑</div>
-          <div style={{ fontSize:13, color:"var(--text-secondary)", marginBottom:14 }}>Share this temporary password with the user. They should change it on first login.</div>
-          <div style={{ padding:"12px 20px", background:"var(--bg-input)", borderRadius:10, fontSize:18, fontWeight:800, letterSpacing:"0.1em", color:"var(--text-primary)", fontFamily:"monospace" }}>{newUserPw}</div>
-          <button onClick={() => { navigator.clipboard.writeText(newUserPw ?? ""); toast("Copied!"); }} style={{ marginTop:12, padding:"7px 18px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Copy Password</button>
+      {/* One-time credentials modal — shown after creating a user or
+          resetting a password. Password is never retrievable again. */}
+      <Modal
+        open={!!credentials}
+        onClose={() => setCredentials(null)}
+        title={credentials?.kind === "reset" ? "Password Reset" : "User Created"}
+        width={440}
+      >
+        <div style={{ textAlign: "center", padding: "8px 0" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🔑</div>
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
+            Share these credentials with <strong style={{ color: "var(--text-primary)" }}>{credentials?.name}</strong>.
+            The password is <strong style={{ color: "var(--warning)" }}>shown once</strong> and cannot be retrieved again — copy it now.
+          </div>
+          <div style={{ padding: "12px 20px", background: "var(--bg-input)", borderRadius: 10, textAlign: "left", fontFamily: "monospace" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>EMAIL</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 10, wordBreak: "break-all" }}>{credentials?.email}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>TEMPORARY PASSWORD</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "0.08em" }}>{credentials?.password}</div>
+          </div>
+          <button
+            onClick={() => {
+              if (credentials) {
+                navigator.clipboard.writeText(`${credentials.email}\n${credentials.password}`);
+                toast("Copied!");
+              }
+            }}
+            style={{ marginTop: 14, padding: "8px 18px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+          >
+            Copy to clipboard
+          </button>
         </div>
       </Modal>
 
       <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={deactivate} name={deleting?.name ?? ""} entity="user (will be deactivated, not deleted)"/>
+
+      <ConfirmModal
+        open={!!resetting}
+        onClose={() => setResetting(null)}
+        onConfirm={resetPassword}
+        name={`${resetting?.name}'s password`}
+        entity="password reset (a new temporary password will be generated)"
+      />
     </AppLayout>
   );
 }
