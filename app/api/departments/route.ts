@@ -10,7 +10,7 @@ export async function GET() {
     const rows = await sql`
       SELECT d.*,
         (SELECT COUNT(*)::int FROM metrics m WHERE m.department_id::text = d.id::text) AS metric_count,
-        (SELECT COUNT(*)::int FROM users u WHERE u.department_id::text = d.id::text AND u.is_active = TRUE) AS member_count,
+        (SELECT COUNT(*)::int FROM users u WHERE u.department_id::text = d.id::text AND u.is_active = TRUE AND u.role != 'super_admin') AS member_count,
         (SELECT COUNT(*)::int FROM tasks t WHERE t.department_id::text = d.id::text) AS task_count
       FROM departments d
       ORDER BY d.sort_order ASC, d.priority_score DESC

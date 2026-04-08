@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql, rowsToCamel, toDateString } from "@/lib/db";
 import { getInitials } from "@/lib/types";
+import { getSessionUser, canSeeSuperAdmin } from "@/lib/authz";
 
 // GET /api/birthdays
 // Returns:
@@ -41,13 +42,24 @@ function daysFromTodayToBirthday(todayYmd: Date, bdayStr: string): number {
 }
 
 export async function GET() {
+  const me = await getSessionUser();
   try {
-    const rows = await sql`
-      SELECT id, name, birthday, is_active
-      FROM users
-      WHERE is_active = TRUE AND birthday IS NOT NULL
-      ORDER BY name
-    `;
+    // Two filters at once:
+    //   1. birthday_notifications = TRUE — respects per-user opt-out
+    //   2. stealth: super admin is hidden from everyone except themselves
+    const rows = canSeeSuperAdmin(me?.role)
+      ? await sql`
+          SELECT id, name, birthday, is_active
+          FROM users
+          WHERE is_active = TRUE AND birthday IS NOT NULL AND birthday_notifications = TRUE
+          ORDER BY name
+        `
+      : await sql`
+          SELECT id, name, birthday, is_active
+          FROM users
+          WHERE is_active = TRUE AND birthday IS NOT NULL AND birthday_notifications = TRUE AND role != 'super_admin'
+          ORDER BY name
+        `;
     const users = rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]);
 
     const today = new Date();

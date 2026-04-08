@@ -1,60 +1,176 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, toCamel } from "@/lib/db";
+import { getSessionUser, canReviewCheckins } from "@/lib/authz";
+import { logAudit } from "@/lib/audit";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Apply confirmed metric updates after user reviews AI proposals
+// Return the current date in the user's timezone as a YYYY-MM-DD string.
+// Used to enforce the "same-day edit window" rule — a user can edit their
+// own check-in only while the day hasn't rolled over for them.
+function dateInTimezone(tz: string | undefined | null): string {
+  const now = new Date();
+  try {
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz || "America/Toronto",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    // en-CA yields YYYY-MM-DD already
+    return fmt.format(now);
+  } catch {
+    return now.toISOString().slice(0, 10);
+  }
+}
+
+// PATCH /api/checkin/[id]
+//
+// Two distinct actions come through here:
+//
+// 1. Review (reviewer action):
+//    - body.status === "reviewed" AND caller has canReviewCheckins(role)
+//    - writes reviewed_by + reviewed_at, applies any confirmedMetrics,
+//      logs an audit entry. Lead and member are rejected.
+//
+// 2. Self-edit (owner action):
+//    - caller is the owner of the checkin
+//    - checkin is not yet reviewed
+//    - the checkin_date is still "today" in the user's timezone
+//    - only the editable content fields are allowed (no status changes)
+//
+// Anything else → 403.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const me = await getSessionUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
+
   // Demo / in-memory checkin IDs are numeric timestamps, not UUIDs — the DB
   // path can't handle them, so acknowledge without writing to the DB.
   if (!UUID_RE.test(params.id)) {
     return NextResponse.json({ data: { id: params.id, status: body.status ?? "reviewed" } });
   }
   try {
-    // If confirmedMetrics provided, write each to metric_updates
-    if (body.confirmedMetrics && Array.isArray(body.confirmedMetrics)) {
-      for (const m of body.confirmedMetrics) {
-        if (!m.confirmed || !m.metricId) continue;
-        // Get current value
-        const curr = await sql`SELECT current_value FROM metrics WHERE id = ${m.metricId}`;
-        if (!curr.length) continue;
-        const oldVal = Number(curr[0].current_value);
-        const newVal = m.newValue ?? (oldVal + (m.delta ?? 0));
+    const existing = await sql`
+      SELECT dc.id, dc.user_id, dc.status, dc.checkin_date, u.timezone
+      FROM daily_checkins dc
+      JOIN users u ON u.id = dc.user_id
+      WHERE dc.id = ${params.id}
+    `;
+    if (!existing.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const row = existing[0] as {
+      id: string; user_id: string; status: string; checkin_date: string | Date; timezone: string;
+    };
 
-        await sql`
-          INSERT INTO metric_updates (metric_id, user_id, checkin_id, source, old_value, new_value, notes)
-          VALUES (${m.metricId}, ${body.userId ?? null}, ${params.id}, 'checkin', ${oldVal}, ${newVal}, ${m.metricName ?? null})
-        `;
-        await sql`
-          UPDATE metrics SET
-            previous_value = current_value,
-            current_value  = ${newVal},
-            updated_at     = NOW()
-          WHERE id = ${m.metricId}
-        `;
-      }
+    const isOwner = row.user_id === me.id;
+    const wantsReview = body.status === "reviewed";
+    const isReviewing = wantsReview && canReviewCheckins(me.role);
+
+    if (!isOwner && !isReviewing) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Update checkin status — always. Only overwrite ai_extracted_metrics
-    // when the caller actually sent a confirmedMetrics array (otherwise the
-    // previous bug was clobbering the AI data with jsonb null whenever a
-    // "Mark as Reviewed" request came in).
-    await sql`
-      UPDATE daily_checkins SET
-        status       = ${body.status ?? "reviewed"},
-        processed_at = NOW()
-      WHERE id = ${params.id}
-    `;
-    if (body.confirmedMetrics && Array.isArray(body.confirmedMetrics)) {
+    // Self-edit guard rails
+    if (isOwner && !isReviewing) {
+      if (row.status === "reviewed") {
+        return NextResponse.json(
+          { error: "This check-in has already been reviewed and can no longer be edited." },
+          { status: 403 },
+        );
+      }
+      // "Same day in user's timezone" check
+      const checkinDateStr = typeof row.checkin_date === "string"
+        ? row.checkin_date.slice(0, 10)
+        : new Date(row.checkin_date).toISOString().slice(0, 10);
+      const todayStr = dateInTimezone(row.timezone);
+      if (checkinDateStr !== todayStr) {
+        return NextResponse.json(
+          { error: "You can only edit a check-in on the same day it was submitted." },
+          { status: 403 },
+        );
+      }
+
+      // Apply the editable content fields (whitelist — no status / review
+      // fields allowed through this branch).
+      if (body.rawResponse !== undefined) await sql`UPDATE daily_checkins SET raw_response = ${body.rawResponse}, updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.aiSummary   !== undefined) await sql`UPDATE daily_checkins SET ai_summary   = ${body.aiSummary},   updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.mood        !== undefined) await sql`UPDATE daily_checkins SET mood         = ${body.mood},        updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.moodEmoji   !== undefined) await sql`UPDATE daily_checkins SET mood_emoji   = ${body.moodEmoji},   updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.wins        !== undefined) await sql`UPDATE daily_checkins SET wins         = ${body.wins},        updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.blockers    !== undefined) await sql`UPDATE daily_checkins SET blockers     = ${body.blockers},    updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.aiExtractedMetrics !== undefined) {
+        await sql`UPDATE daily_checkins SET ai_extracted_metrics = ${JSON.stringify(body.aiExtractedMetrics)}::jsonb, updated_at = NOW() WHERE id = ${params.id}`;
+      }
+      if (body.aiFlags !== undefined) {
+        await sql`UPDATE daily_checkins SET ai_flags = ${JSON.stringify(body.aiFlags)}::jsonb, updated_at = NOW() WHERE id = ${params.id}`;
+      }
+
+      await logAudit({
+        action: "checkin.update",
+        entityType: "checkin",
+        entityId: params.id,
+        metadata: { fields: Object.keys(body), selfEdit: true },
+        req,
+      });
+      const refreshed = await sql`SELECT * FROM daily_checkins WHERE id = ${params.id}`;
+      return NextResponse.json({ data: toCamel(refreshed[0] as Record<string, unknown>) });
+    }
+
+    // Reviewer branch
+    if (isReviewing) {
+      // If confirmedMetrics provided, write each to metric_updates
+      if (body.confirmedMetrics && Array.isArray(body.confirmedMetrics)) {
+        for (const m of body.confirmedMetrics) {
+          if (!m.confirmed || !m.metricId) continue;
+          // Get current value
+          const curr = await sql`SELECT current_value FROM metrics WHERE id = ${m.metricId}`;
+          if (!curr.length) continue;
+          const oldVal = Number(curr[0].current_value);
+          const newVal = m.newValue ?? (oldVal + (m.delta ?? 0));
+
+          await sql`
+            INSERT INTO metric_updates (metric_id, user_id, checkin_id, source, old_value, new_value, notes)
+            VALUES (${m.metricId}, ${me.id}, ${params.id}, 'checkin', ${oldVal}, ${newVal}, ${m.metricName ?? null})
+          `;
+          await sql`
+            UPDATE metrics SET
+              previous_value = current_value,
+              current_value  = ${newVal},
+              updated_at     = NOW()
+            WHERE id = ${m.metricId}
+          `;
+        }
+      }
+
       await sql`
         UPDATE daily_checkins SET
-          ai_extracted_metrics = ${JSON.stringify(body.confirmedMetrics)}::jsonb
+          status       = 'reviewed',
+          reviewed_by  = ${me.id},
+          reviewed_at  = NOW(),
+          reviewer_notes = ${body.reviewerNotes ?? null},
+          processed_at = NOW(),
+          updated_at   = NOW()
         WHERE id = ${params.id}
       `;
+      if (body.confirmedMetrics && Array.isArray(body.confirmedMetrics)) {
+        await sql`
+          UPDATE daily_checkins SET
+            ai_extracted_metrics = ${JSON.stringify(body.confirmedMetrics)}::jsonb
+          WHERE id = ${params.id}
+        `;
+      }
+      await logAudit({
+        action: "checkin.review",
+        entityType: "checkin",
+        entityId: params.id,
+        metadata: { userId: row.user_id, checkinDate: row.checkin_date, confirmedCount: (body.confirmedMetrics ?? []).length },
+        req,
+      });
+      const rows = await sql`SELECT * FROM daily_checkins WHERE id = ${params.id}`;
+      return NextResponse.json({ data: toCamel(rows[0] as Record<string, unknown>) });
     }
-    const rows = await sql`SELECT * FROM daily_checkins WHERE id = ${params.id}`;
-    return NextResponse.json({ data: toCamel(rows[0] as Record<string, unknown>) });
+
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   } catch(e: unknown) {
     console.error("[checkin/[id]/PATCH] error:", e);
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

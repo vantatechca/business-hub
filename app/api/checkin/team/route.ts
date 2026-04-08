@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
+import { getSessionUser, canSeeSuperAdmin } from "@/lib/authz";
 
 // GET /api/checkin/team?month=YYYY-MM
 // Returns:
@@ -12,8 +13,10 @@ import { sql } from "@/lib/db";
 //     ]
 //   }
 //
-// Used by the team check-in heatmap on /checkin
+// Used by the team check-in heatmap on /checkin. The super admin is filtered
+// out of the member list unless the caller is the SA themselves.
 export async function GET(req: NextRequest) {
+  const me = await getSessionUser();
   const { searchParams } = new URL(req.url);
   const month = searchParams.get("month") ?? new Date().toISOString().slice(0, 7); // YYYY-MM
   if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -25,17 +28,29 @@ export async function GET(req: NextRequest) {
   const daysInMonth = new Date(year, monNum, 0).getDate();
   const lastDay = `${month}-${String(daysInMonth).padStart(2, "0")}`;
 
+  const includeSA = canSeeSuperAdmin(me?.role);
   try {
-    const rows = await sql`
-      SELECT u.id AS user_id, u.name AS user_name, u.role,
-             dc.checkin_date, dc.status, dc.id AS checkin_id
-      FROM users u
-      LEFT JOIN daily_checkins dc
-        ON dc.user_id = u.id
-       AND dc.checkin_date BETWEEN ${firstDay} AND ${lastDay}
-      WHERE u.is_active = TRUE
-      ORDER BY u.role, u.name, dc.checkin_date
-    `;
+    const rows = includeSA
+      ? await sql`
+          SELECT u.id AS user_id, u.name AS user_name, u.role,
+                 dc.checkin_date, dc.status, dc.id AS checkin_id
+          FROM users u
+          LEFT JOIN daily_checkins dc
+            ON dc.user_id = u.id
+           AND dc.checkin_date BETWEEN ${firstDay} AND ${lastDay}
+          WHERE u.is_active = TRUE
+          ORDER BY u.role, u.name, dc.checkin_date
+        `
+      : await sql`
+          SELECT u.id AS user_id, u.name AS user_name, u.role,
+                 dc.checkin_date, dc.status, dc.id AS checkin_id
+          FROM users u
+          LEFT JOIN daily_checkins dc
+            ON dc.user_id = u.id
+           AND dc.checkin_date BETWEEN ${firstDay} AND ${lastDay}
+          WHERE u.is_active = TRUE AND u.role != 'super_admin'
+          ORDER BY u.role, u.name, dc.checkin_date
+        `;
 
     const memberMap = new Map<string, {
       userId: string;

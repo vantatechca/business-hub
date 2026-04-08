@@ -16,7 +16,7 @@ const blank = { name:"", head:"", icon:"💼", color:COLORS[0], health:80, membe
 export default function DepartmentsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
-  const canReorder = role === "admin" || role === "leader";
+  const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
 
   const [depts, setDepts] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);

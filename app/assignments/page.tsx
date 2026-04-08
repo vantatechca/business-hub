@@ -14,7 +14,7 @@ const ROLE_COLORS: Record<string,string> = { owner:"var(--warning)", contributor
 export default function AssignmentsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
-  const canReorder = role === "admin" || role === "leader";
+  const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
 
   const [metrics, setMetrics]       = useState<Metric[]>([]);
   const [users, setUsers]           = useState<User[]>([]);

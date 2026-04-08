@@ -3,14 +3,36 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState } from "@/components/ui/shared";
-import type { TeamMember, Department } from "@/lib/types";
+import ProfileDrawer from "@/components/ProfileDrawer";
+import MultiDeptSelect from "@/components/MultiDeptSelect";
+import type { TeamMember, Department, UserRole } from "@/lib/types";
 
 const STATUSES = ["active", "away", "busy", "offline"];
-const ROLES: { value: "admin" | "leader" | "member"; label: string }[] = [
-  { value: "admin",  label: "Admin" },
-  { value: "leader", label: "Leader" },
-  { value: "member", label: "Member" },
+// Role options shown in the add/edit form. Super admin is deliberately
+// excluded — only super_admin can create another super_admin, and that
+// already happens through the bootstrap seed.
+const ROLES: { value: Exclude<UserRole, "super_admin" | "leader">; label: string }[] = [
+  { value: "admin",   label: "Admin" },
+  { value: "manager", label: "Manager" },
+  { value: "lead",    label: "Lead" },
+  { value: "member",  label: "Member" },
 ];
+const ROLE_BG: Record<string, string> = {
+  super_admin: "var(--danger-bg)",
+  admin:       "var(--violet-bg)",
+  manager:     "var(--warning-bg)",
+  leader:      "var(--warning-bg)",
+  lead:        "var(--accent-bg)",
+  member:      "var(--accent-bg)",
+};
+const ROLE_FG: Record<string, string> = {
+  super_admin: "var(--danger)",
+  admin:       "var(--violet)",
+  manager:     "var(--warning)",
+  leader:      "var(--warning)",
+  lead:        "var(--accent)",
+  member:      "var(--accent)",
+};
 const SCOL: Record<string, string> = {
   active:  "var(--success)",
   away:    "var(--warning)",
@@ -19,18 +41,24 @@ const SCOL: Record<string, string> = {
 };
 const TMMD = new Date().toISOString().slice(5, 10);
 
+type FormRole = Exclude<UserRole, "super_admin" | "leader">;
+
 const blank = {
   name: "",
   jobTitle: "",
-  role: "member" as "admin" | "leader" | "member",
-  departmentId: "" as string,
+  role: "member" as FormRole,
+  departmentIds: [] as string[],
   status: "active" as string,
   birthday: "" as string,
 };
 
 export default function TeamPage() {
   const { data: session } = useSession();
-  const isAdmin = (session?.user as { role?: string })?.role === "admin";
+  const myRole = (session?.user as { role?: string })?.role ?? "member";
+  const isAdmin = myRole === "admin" || myRole === "super_admin";
+  // Profile drawer opens for anyone above lead. Lead still gets a click that
+  // shows a minimal read-only card (the drawer handles the minimal branch).
+  const canOpenProfileDrawer = myRole !== "member";
 
   const [team, setTeam]   = useState<TeamMember[]>([]);
   const [depts, setDepts] = useState<Department[]>([]);
@@ -42,9 +70,10 @@ export default function TeamPage() {
   const [deleting, setDeleting] = useState<TeamMember | null>(null);
   const [form, setForm]   = useState<typeof blank>({ ...blank });
   const [hov, setHov]     = useState<string | null>(null);
-  // Credentials modal shown ONCE after adding a new member — contains the
-  // auto-generated email + temporary password the admin needs to share.
-  // Password resets live on /users; this modal is create-only here.
+  const [drawerUserId, setDrawerUserId] = useState<string | null>(null);
+  // When a lead clicks a card we still show a minimal summary (name / role /
+  // departments) without fetching the full profile from the server.
+  const [drawerHint, setDrawerHint] = useState<TeamMember | null>(null);
   const [credentials, setCredentials] = useState<{ email: string; password: string; name: string } | null>(null);
   const { ts, toast } = useToast();
 
@@ -61,28 +90,36 @@ export default function TeamPage() {
   const rows = team.filter(m =>
     (m.name.toLowerCase().includes(q.toLowerCase())
       || (m.jobTitle ?? "").toLowerCase().includes(q.toLowerCase())
-      || (m.departmentName ?? "").toLowerCase().includes(q.toLowerCase()))
-    && (!df || m.departmentName === df)
+      || (m.departments ?? []).some(d => d.name.toLowerCase().includes(q.toLowerCase())))
+    && (!df || (m.departments ?? []).some(d => d.name === df))
   );
 
   const openAdd = () => {
-    setForm({
-      ...blank,
-      departmentId: String(depts[0]?.id ?? ""),
-    });
+    setForm({ ...blank, departmentIds: [] });
     setShowAdd(true);
   };
 
   const openEdit = (m: TeamMember) => {
     setEditing(m);
+    // Only allow edit for the 4 "regular" roles in the form (super_admin
+    // shouldn't appear, leader maps to manager in the UI).
+    const formRole: FormRole =
+      m.role === "super_admin" || m.role === "leader" ? "manager"
+      : (m.role as FormRole);
     setForm({
       name: m.name,
       jobTitle: m.jobTitle ?? "",
-      role: m.role,
-      departmentId: String(m.departmentId ?? ""),
+      role: formRole,
+      departmentIds: (m.departments ?? []).map(d => String(d.id)),
       status: m.status,
       birthday: m.birthday ?? "",
     });
+  };
+
+  const openDrawer = (m: TeamMember) => {
+    if (!canOpenProfileDrawer) return;
+    setDrawerHint(m);
+    setDrawerUserId(String(m.id));
   };
 
   const save = async () => {
@@ -90,7 +127,12 @@ export default function TeamPage() {
     const res = await fetch("/api/team", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        ...form,
+        // Backwards-compat: also send a primary departmentId for any code
+        // path that hasn't moved to multi-dept yet.
+        departmentId: form.departmentIds[0] ?? null,
+      }),
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -99,7 +141,6 @@ export default function TeamPage() {
     const d = await res.json();
     await load();
     setShowAdd(false);
-    // Pop the created-credentials modal so the admin can copy and share
     setCredentials({
       name: form.name,
       email: d.email,
@@ -113,7 +154,11 @@ export default function TeamPage() {
     const res = await fetch(`/api/team/${editing.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        ...form,
+        departmentIds: form.departmentIds,
+        departmentId: form.departmentIds[0] ?? null,
+      }),
     });
     if (!res.ok) return toast("Update failed", "er");
     await load();
@@ -155,16 +200,10 @@ export default function TeamPage() {
       <FormField label="Job Title">
         <HubInput value={form.jobTitle} onChange={e => setForm(p => ({ ...p, jobTitle: e.target.value }))} placeholder="e.g. Senior Engineer" />
       </FormField>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <FormField label="Role">
-          <HubSelect value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as "admin" | "leader" | "member" }))}>
+          <HubSelect value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as FormRole }))}>
             {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </HubSelect>
-        </FormField>
-        <FormField label="Department">
-          <HubSelect value={form.departmentId} onChange={e => setForm(p => ({ ...p, departmentId: e.target.value }))}>
-            <option value="">— None —</option>
-            {depts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
           </HubSelect>
         </FormField>
         <FormField label="Status">
@@ -173,9 +212,21 @@ export default function TeamPage() {
           </HubSelect>
         </FormField>
       </div>
+      <FormField label="Departments (select one or more)">
+        <MultiDeptSelect
+          departments={depts}
+          selectedIds={form.departmentIds}
+          onChange={ids => setForm(p => ({ ...p, departmentIds: ids }))}
+        />
+      </FormField>
       <FormField label="Birthday (optional)">
         <HubInput type="date" value={form.birthday} onChange={e => setForm(p => ({ ...p, birthday: e.target.value }))} />
       </FormField>
+      {form.role === "manager" && !editing && (
+        <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent)30", fontSize: 11, color: "var(--accent)", marginBottom: 4 }}>
+          Managers are set to require daily check-ins and receive birthday notifications by default. You can toggle these per-user after creation.
+        </div>
+      )}
     </div>
   );
 
@@ -209,7 +260,7 @@ export default function TeamPage() {
         <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="hub-table">
             <thead>
-              <tr>{["Member", "Job Title", "Role", "Department", "Status", "Check-In", ""].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>{["Member", "Job Title", "Role", "Departments", "Status", "Check-In", ""].map(h => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map(m => (
@@ -217,9 +268,9 @@ export default function TeamPage() {
                   key={m.id}
                   onMouseEnter={() => setHov(String(m.id))}
                   onMouseLeave={() => setHov(null)}
-                  style={{ background: hov === String(m.id) ? "var(--bg-card-hover)" : "transparent" }}
+                  style={{ background: hov === String(m.id) ? "var(--bg-card-hover)" : "transparent", cursor: canOpenProfileDrawer ? "pointer" : "default" }}
                 >
-                  <td>
+                  <td onClick={() => openDrawer(m)}>
                     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                       <Avatar s={m.initials} size={30} />
                       <div>
@@ -231,20 +282,30 @@ export default function TeamPage() {
                       </div>
                     </div>
                   </td>
-                  <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{m.jobTitle ?? "—"}</td>
-                  <td>
-                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, fontWeight: 700, textTransform: "capitalize", background: m.role === "leader" ? "var(--warning-bg)" : m.role === "admin" ? "var(--violet-bg)" : "var(--accent-bg)", color: m.role === "leader" ? "var(--warning)" : m.role === "admin" ? "var(--violet)" : "var(--accent)" }}>
-                      {m.role}
+                  <td onClick={() => openDrawer(m)} style={{ fontSize: 12, color: "var(--text-secondary)" }}>{m.jobTitle ?? "—"}</td>
+                  <td onClick={() => openDrawer(m)}>
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, fontWeight: 700, textTransform: "capitalize", background: ROLE_BG[m.role] ?? "var(--accent-bg)", color: ROLE_FG[m.role] ?? "var(--accent)" }}>
+                      {m.role.replace("_", " ")}
                     </span>
                   </td>
-                  <td style={{ fontSize: 12, color: "var(--text-primary)" }}>{m.departmentName ?? "—"}</td>
-                  <td>
+                  <td onClick={() => openDrawer(m)}>
+                    {(m.departments && m.departments.length > 0) ? (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", maxWidth: 220 }}>
+                        {m.departments.map(d => (
+                          <span key={d.id} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 5, background: (d.color ?? "#5b8ef8") + "22", color: d.color ?? "var(--accent)", fontWeight: 600 }}>
+                            {d.name}{d.roleInDept === "lead" ? " ·L" : ""}
+                          </span>
+                        ))}
+                      </div>
+                    ) : <span style={{ fontSize: 12, color: "var(--text-muted)" }}>—</span>}
+                  </td>
+                  <td onClick={() => openDrawer(m)}>
                     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                       <div style={{ width: 6, height: 6, borderRadius: "50%", background: SCOL[m.status] }} />
                       <span style={{ fontSize: 11, color: SCOL[m.status], fontWeight: 600, textTransform: "capitalize" }}>{m.status}</span>
                     </div>
                   </td>
-                  <td>
+                  <td onClick={e => e.stopPropagation()}>
                     <button
                       onClick={() => toggleCI(m)}
                       style={{ padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, background: m.checkedInToday ? "var(--success-bg)" : "var(--bg-input)", color: m.checkedInToday ? "var(--success)" : "var(--text-secondary)" }}
@@ -252,7 +313,7 @@ export default function TeamPage() {
                       {m.checkedInToday ? "✓ Done" : "Mark In"}
                     </button>
                   </td>
-                  <td>
+                  <td onClick={e => e.stopPropagation()}>
                     {isAdmin && (
                       <div style={{ display: "flex", gap: 5 }}>
                         <button onClick={() => openEdit(m)} style={{ padding: "4px 9px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}>Edit</button>
@@ -295,6 +356,7 @@ export default function TeamPage() {
           <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
             Share these credentials with <strong style={{ color: "var(--text-primary)" }}>{credentials?.name}</strong>.
             The password is <strong style={{ color: "var(--warning)" }}>shown once</strong> and cannot be retrieved again — copy it now.
+            The user will be prompted to change it on first login.
           </div>
           <div style={{ padding: "12px 20px", background: "var(--bg-input)", borderRadius: 10, textAlign: "left", fontFamily: "monospace" }}>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>EMAIL</div>
@@ -322,6 +384,20 @@ export default function TeamPage() {
         onConfirm={del}
         name={deleting?.name ?? ""}
         entity="member (will be deactivated, not deleted)"
+      />
+
+      <ProfileDrawer
+        userId={drawerUserId}
+        open={!!drawerUserId}
+        onClose={() => { setDrawerUserId(null); setDrawerHint(null); }}
+        onSaved={() => { load(); setDrawerUserId(null); setDrawerHint(null); }}
+        minimalHint={drawerHint ? {
+          name: drawerHint.name,
+          email: drawerHint.email,
+          role: drawerHint.role,
+          initials: drawerHint.initials,
+          departments: drawerHint.departments,
+        } : undefined}
       />
     </AppLayout>
   );
