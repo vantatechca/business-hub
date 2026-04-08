@@ -45,7 +45,7 @@ export default function GoalsPage() {
     toast(`+${formatValue(inc, g.format)} progress`);
   };
 
-  const GoalForm = () => (
+  const goalForm = (
     <div>
       <FormField label="Goal Name"><HubInput value={form.name} onChange={e => setForm(p => ({...p,name:e.target.value}))} placeholder="e.g. Annual Revenue, NPS Score…" /></FormField>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
@@ -115,7 +115,7 @@ export default function GoalsPage() {
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Goal">
-        <GoalForm />
+        {goalForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setShowAdd(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={save} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Add Goal</button>
@@ -123,7 +123,7 @@ export default function GoalsPage() {
       </Modal>
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`}>
-        <GoalForm />
+        {goalForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>

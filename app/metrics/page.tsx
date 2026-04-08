@@ -71,7 +71,7 @@ export default function MetricsPage() {
     setForm({ departmentId:m.departmentId, name:m.name, metricType:m.metricType, direction:m.direction, currentValue:m.currentValue, targetValue:m.targetValue, unit:m.unit, priorityScore:m.priorityScore, notes:m.notes ?? "" });
   };
 
-  const MetricForm = () => (
+  const metricForm = (
     <div>
       <FormField label="Department">
         <HubSelect value={form.departmentId} onChange={e => setForm(p => ({...p, departmentId:e.target.value}))}>
@@ -106,7 +106,7 @@ export default function MetricsPage() {
     </div>
   );
 
-  const ActionBtns = ({ onSave, onCancel, label }: { onSave:()=>void; onCancel:()=>void; label:string }) => (
+  const actionBtns = (onSave: () => void, onCancel: () => void, label: string) => (
     <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
       <button onClick={onCancel} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
       <button onClick={onSave} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>{label}</button>
@@ -226,11 +226,11 @@ export default function MetricsPage() {
           </FormField>
           <div style={{ fontSize:11, color:"var(--text-muted)" }}>This will be logged in the audit trail.</div>
         </div>
-        <ActionBtns onSave={quickUpdate} onCancel={() => setUpdating(null)} label="Update Value"/>
+        {actionBtns(quickUpdate, () => setUpdating(null), "Update Value")}
       </Modal>
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Metric" width={560}><MetricForm/><ActionBtns onSave={save} onCancel={() => setShowAdd(false)} label="Add Metric"/></Modal>
-      <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`} width={560}><MetricForm/><ActionBtns onSave={update} onCancel={() => setEditing(null)} label="Save Changes"/></Modal>
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Metric" width={560}>{metricForm}{actionBtns(save, () => setShowAdd(false), "Add Metric")}</Modal>
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`} width={560}>{metricForm}{actionBtns(update, () => setEditing(null), "Save Changes")}</Modal>
       <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={del} name={deleting?.name ?? ""} entity="metric"/>
     </AppLayout>
   );
