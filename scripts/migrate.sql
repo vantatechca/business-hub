@@ -165,65 +165,12 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_r
 CREATE INDEX IF NOT EXISTS idx_depts_priority ON departments(priority_score DESC);
 CREATE INDEX IF NOT EXISTS idx_metrics_priority ON metrics(priority_score DESC);
 
--- ── ADDITIVE MIGRATIONS (safe to re-run) ─────────────────────
--- Birthday column on users. Added in a later phase for the birthdays feature.
-ALTER TABLE users ADD COLUMN IF NOT EXISTS birthday DATE;
-
--- Team-view columns on users. When the Team page was unified with the Users
--- table, these replaced the old in-memory teamMembers array.
-ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES departments(id) ON DELETE SET NULL;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active','away','busy','offline'));
-
--- Tasks. Previously in-memory in lib/seed.ts; now persisted.
-CREATE TABLE IF NOT EXISTS tasks (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title         VARCHAR(500) NOT NULL,
-  priority      VARCHAR(20) NOT NULL DEFAULT 'medium' CHECK (priority IN ('urgent','high','medium','low')),
-  status        VARCHAR(20) NOT NULL DEFAULT 'todo'   CHECK (status IN ('todo','in-progress','done')),
-  department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
-  assignee_id   UUID REFERENCES users(id)       ON DELETE SET NULL,
-  due_date      DATE,
-  sort_order    INTEGER DEFAULT 0,
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_department ON tasks(department_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
-
--- Goals / OKRs. Previously in-memory.
-CREATE TABLE IF NOT EXISTS goals (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name       VARCHAR(255) NOT NULL,
-  target     DECIMAL NOT NULL DEFAULT 0,
-  current    DECIMAL NOT NULL DEFAULT 0,
-  format     VARCHAR(20) NOT NULL DEFAULT 'number' CHECK (format IN ('number','currency','percent')),
-  color      VARCHAR(10) NOT NULL DEFAULT '#5b8ef8',
-  sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Revenue entries. Previously in-memory.
-CREATE TABLE IF NOT EXISTS revenue_entries (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  amount        DECIMAL NOT NULL DEFAULT 0,
-  department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
-  description   TEXT,
-  month         VARCHAR(3),
-  year          INTEGER,
-  created_at    TIMESTAMP DEFAULT NOW()
-);
-
--- Expense entries. Previously in-memory.
-CREATE TABLE IF NOT EXISTS expense_entries (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  amount        DECIMAL NOT NULL DEFAULT 0,
-  department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
-  description   TEXT,
-  month         VARCHAR(3),
-  year          INTEGER,
-  created_at    TIMESTAMP DEFAULT NOW()
-);
+-- ────────────────────────────────────────────────────────────
+-- Additive migrations that reference departments(id) are no longer
+-- declared here. They're applied by scripts/setup-db.js AFTER this
+-- file runs, so they can detect the actual `departments.id` column
+-- type at runtime and build FKs with a matching type. This handles
+-- both UUID and TEXT-shaped department ids without failing on type
+-- mismatches. See runAdditiveMigrations() in setup-db.js.
+-- ────────────────────────────────────────────────────────────
 
