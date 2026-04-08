@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { X, Loader2 } from "lucide-react";
+import { X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metric } from "@/lib/types";
 import { formatMetricValue, healthColor } from "@/lib/types";
 
@@ -32,13 +32,17 @@ export default function MetricHistoryDrawer({
 }) {
   const [data, setData] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  // Daily metrics default to a wider window so the month calendar can browse
+  // prev/next months without re-fetching. Value metrics use the narrower
+  // 30/60/90 toggle for the trend chart.
   const [days, setDays] = useState<30 | 60 | 90>(30);
 
   useEffect(() => {
     if (!open || !metric) return;
     setLoading(true);
     setData(null);
-    fetch(`/api/metrics/${metric.id}/history?days=${days}`)
+    const range = metric.metricType === "daily" ? 120 : days;
+    fetch(`/api/metrics/${metric.id}/history?days=${range}`)
       .then(r => r.json())
       .then(d => { if (!d.error) setData(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -97,27 +101,28 @@ export default function MetricHistoryDrawer({
 
         {!loading && data && (
           <>
-            <div style={{ padding: "0 22px 14px", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, letterSpacing: ".07em" }}>RANGE</span>
-              {[30, 60, 90].map(n => (
-                <button
-                  key={n}
-                  onClick={() => setDays(n as 30 | 60 | 90)}
-                  style={{
-                    padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                    border: `1px solid ${days === n ? "var(--accent)" : "var(--border-card)"}`,
-                    background: days === n ? "var(--accent-bg)" : "var(--bg-input)",
-                    color: days === n ? "var(--accent)" : "var(--text-secondary)",
-                  }}
-                >
-                  {n}d
-                </button>
-              ))}
-            </div>
+            {!isDaily && (
+              <div style={{ padding: "0 22px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, letterSpacing: ".07em" }}>RANGE</span>
+                {[30, 60, 90].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => setDays(n as 30 | 60 | 90)}
+                    style={{
+                      padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      border: `1px solid ${days === n ? "var(--accent)" : "var(--border-card)"}`,
+                      background: days === n ? "var(--accent-bg)" : "var(--bg-input)",
+                      color: days === n ? "var(--accent)" : "var(--text-secondary)",
+                    }}
+                  >
+                    {n}d
+                  </button>
+                ))}
+              </div>
+            )}
 
             {isDaily ? (
-              <CalendarHeatmap
-                days={days}
+              <MonthCalendar
                 points={data.daily}
                 target={data.metric.targetValue ?? null}
                 unit={metric.unit}
@@ -186,15 +191,19 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
   );
 }
 
-// ── Calendar heatmap for daily metrics ─────────────────────────────────
-function CalendarHeatmap({
-  days,
+// ── Month calendar for daily metrics ───────────────────────────────────
+// Traditional 7-column month grid. Each day cell shows its number and, if a
+// value was recorded on that day, the value is displayed in the bottom half
+// with a color-coded background reflecting how it compared to the target.
+// Prev / Today / Next arrows let users browse months within the fetched
+// window (the drawer requests 120 days of history for daily metrics so the
+// user can scroll ~4 months of history without a re-fetch).
+function MonthCalendar({
   points,
   target,
   unit,
   direction,
 }: {
-  days: number;
   points: DayPoint[];
   target: number | null;
   unit: string;
@@ -202,95 +211,211 @@ function CalendarHeatmap({
 }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const start = new Date(today);
-  start.setDate(today.getDate() - (days - 1));
+  const [viewMonth, setViewMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selected, setSelected] = useState<{ date: string; value: number | null } | null>(null);
 
-  const map = new Map(points.map(p => [p.date, p]));
-  const cells: { date: string; value: number | null }[] = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    const key = d.toISOString().slice(0, 10);
-    const p = map.get(key);
-    cells.push({ date: key, value: p ? p.value : null });
-  }
+  const valueByDate = new Map(points.map(p => [p.date, p.value]));
 
-  // Color mapping: hit target = green, partial = yellow, miss = red, no data = neutral
-  const cellColor = (v: number | null): string => {
-    if (v == null) return "var(--bg-input)";
-    if (target == null || target === 0) return v > 0 ? "var(--accent)" : "var(--text-muted)";
+  // Color decision: hit target = green, close = yellow, missed = red, none = neutral
+  const cellColor = (v: number | null): { bg: string; fg: string } => {
+    if (v == null) return { bg: "transparent", fg: "var(--text-muted)" };
+    if (target == null || target === 0) {
+      return v > 0
+        ? { bg: "var(--accent-bg)", fg: "var(--accent)" }
+        : { bg: "var(--bg-input)", fg: "var(--text-muted)" };
+    }
     const ratio = v / target;
     const hit = direction === "higher_better" ? ratio >= 1 : ratio <= 1;
-    if (hit) return "var(--success)";
+    if (hit) return { bg: "rgba(52,211,153,.18)", fg: "var(--success)" };
     if (direction === "higher_better") {
-      if (ratio >= 0.7) return "var(--warning)";
-      return "var(--danger)";
+      if (ratio >= 0.7) return { bg: "rgba(251,191,36,.18)", fg: "var(--warning)" };
+      return { bg: "rgba(248,113,113,.18)", fg: "var(--danger)" };
     } else {
-      if (ratio <= 1.3) return "var(--warning)";
-      return "var(--danger)";
+      if (ratio <= 1.3) return { bg: "rgba(251,191,36,.18)", fg: "var(--warning)" };
+      return { bg: "rgba(248,113,113,.18)", fg: "var(--danger)" };
     }
   };
 
-  // Pad to align to weeks: figure out the day-of-week of the start cell
-  const startDow = (new Date(cells[0].date).getDay() + 6) % 7; // 0 = Monday
-  const padded: ({ date: string; value: number | null } | null)[] = [
-    ...Array(startDow).fill(null),
-    ...cells,
-  ];
-  // Group into weeks (columns of 7)
-  const weeks: ({ date: string; value: number | null } | null)[][] = [];
-  for (let i = 0; i < padded.length; i += 7) {
-    weeks.push(padded.slice(i, i + 7));
+  // Build the grid. Leading / trailing days from adjacent months are shown
+  // faded so the calendar fills a clean 6×7 block.
+  const year = viewMonth.getFullYear();
+  const month = viewMonth.getMonth();
+  const firstOfMonth = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // Week starts Monday. JS getDay: 0 = Sun, 1 = Mon...
+  const leadingDays = (firstOfMonth.getDay() + 6) % 7;
+  const cells: { date: Date; inMonth: boolean }[] = [];
+  for (let i = leadingDays; i > 0; i--) {
+    cells.push({ date: new Date(year, month, 1 - i), inMonth: false });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ date: new Date(year, month, d), inMonth: true });
+  }
+  while (cells.length % 7 !== 0) {
+    const last = cells[cells.length - 1].date;
+    const next = new Date(last);
+    next.setDate(last.getDate() + 1);
+    cells.push({ date: next, inMonth: false });
+  }
+  // Tally stats for the current month
+  let daysReported = 0;
+  let daysHit = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = new Date(year, month, d).toISOString().slice(0, 10);
+    const v = valueByDate.get(key);
+    if (v != null) {
+      daysReported++;
+      if (target != null && target !== 0) {
+        const hit = direction === "higher_better" ? v / target >= 1 : v / target <= 1;
+        if (hit) daysHit++;
+      }
+    }
   }
 
-  const cellSize = 14;
-  const gap = 3;
+  const monthLabel = firstOfMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const isCurrentMonth =
+    viewMonth.getFullYear() === today.getFullYear() && viewMonth.getMonth() === today.getMonth();
 
   return (
-    <div style={{ padding: "0 22px 8px" }}>
-      <div style={{ overflowX: "auto", paddingBottom: 6 }}>
-        <div style={{ display: "flex", gap }}>
-          {/* Day-of-week labels */}
-          <div style={{ display: "flex", flexDirection: "column", gap, paddingTop: 16, fontSize: 9, color: "var(--text-muted)", marginRight: 4 }}>
-            {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-              <div key={i} style={{ height: cellSize, lineHeight: `${cellSize}px` }}>{d}</div>
-            ))}
-          </div>
-          {weeks.map((week, wi) => (
-            <div key={wi} style={{ display: "flex", flexDirection: "column", gap }}>
-              <div style={{ height: 14, fontSize: 9, color: "var(--text-muted)", textAlign: "center" }}>
-                {wi === 0 || (week[0] && new Date(week[0].date).getDate() <= 7)
-                  ? new Date((week.find(c => c) as { date: string }).date).toLocaleString(undefined, { month: "short" })
-                  : ""}
-              </div>
-              {week.map((cell, ci) => {
-                if (!cell) return <div key={ci} style={{ width: cellSize, height: cellSize }} />;
-                const bg = cellColor(cell.value);
-                return (
-                  <div
-                    key={ci}
-                    title={`${cell.date}${cell.value != null ? ` · ${formatMetricValue(cell.value, unit)}` : " · no data"}`}
-                    style={{
-                      width: cellSize,
-                      height: cellSize,
-                      borderRadius: 3,
-                      background: bg,
-                      border: cell.value == null ? "1px solid var(--border-card)" : "none",
-                      cursor: "default",
-                    }}
-                  />
-                );
-              })}
-            </div>
-          ))}
+    <div style={{ padding: "0 22px" }}>
+      {/* Month header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>{monthLabel}</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => setViewMonth(new Date(year, month - 1, 1))}
+            style={{ padding: "4px 8px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center" }}
+            aria-label="Previous month"
+          >
+            <ChevronLeft size={13} />
+          </button>
+          {!isCurrentMonth && (
+            <button
+              onClick={() => setViewMonth(new Date(today.getFullYear(), today.getMonth(), 1))}
+              style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+            >
+              Today
+            </button>
+          )}
+          <button
+            onClick={() => setViewMonth(new Date(year, month + 1, 1))}
+            style={{ padding: "4px 8px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center" }}
+            aria-label="Next month"
+          >
+            <ChevronRight size={13} />
+          </button>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 10, color: "var(--text-secondary)" }}>
-        <Legend color="var(--success)" label="Met target" />
-        <Legend color="var(--warning)" label="Close" />
-        <Legend color="var(--danger)" label="Missed" />
-        <Legend color="var(--bg-input)" label="No data" border />
+
+      {/* Day of week header */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => (
+          <div key={d} style={{ fontSize: 9, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".07em", textTransform: "uppercase", textAlign: "center", padding: "4px 0" }}>
+            {d}
+          </div>
+        ))}
       </div>
+
+      {/* Calendar grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+        {cells.map((c, i) => {
+          const key = c.date.toISOString().slice(0, 10);
+          const value = valueByDate.get(key) ?? null;
+          const isToday = c.date.getTime() === today.getTime();
+          const isFuture = c.date.getTime() > today.getTime();
+          const { bg, fg } = cellColor(value);
+          const dim = !c.inMonth || isFuture;
+          return (
+            <button
+              key={i}
+              onClick={() => value != null && setSelected({ date: key, value })}
+              disabled={value == null}
+              title={value != null ? `${key} · ${formatMetricValue(value, unit)}` : key}
+              style={{
+                aspectRatio: "1 / 1",
+                minHeight: 52,
+                padding: "5px 6px",
+                borderRadius: 8,
+                background: dim ? "transparent" : bg,
+                border: isToday ? "2px solid var(--accent)" : "1px solid var(--border-card)",
+                cursor: value != null ? "pointer" : "default",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                alignItems: "stretch",
+                textAlign: "left",
+                opacity: dim ? 0.35 : 1,
+                transition: "transform .12s",
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 700, color: c.inMonth ? "var(--text-secondary)" : "var(--text-muted)" }}>
+                {c.date.getDate()}
+              </div>
+              {value != null ? (
+                <div style={{ fontSize: 12, fontWeight: 800, color: fg, textAlign: "right", lineHeight: 1 }}>
+                  {formatMetricValue(value, unit)}
+                </div>
+              ) : (
+                <div style={{ fontSize: 9, color: "var(--text-muted)", textAlign: "right" }}>&nbsp;</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Month stats */}
+      <div style={{ display: "flex", gap: 18, marginTop: 12, padding: "10px 12px", background: "var(--bg-input)", borderRadius: 8 }}>
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".07em" }}>REPORTED</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)", marginTop: 2 }}>
+            {daysReported}/{daysInMonth} days
+          </div>
+        </div>
+        {target != null && target !== 0 && (
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".07em" }}>HIT TARGET</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--success)", marginTop: 2 }}>
+              {daysHit}/{daysReported || 0}
+            </div>
+          </div>
+        )}
+        <div style={{ flex: 1 }} />
+        {daysReported === 0 && (
+          <div style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center", fontStyle: "italic" }}>
+            No updates in this month yet — press <strong style={{ color: "var(--text-secondary)" }}>Update</strong> on the metric row to record today&apos;s value.
+          </div>
+        )}
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 10, color: "var(--text-secondary)" }}>
+        <Legend color="rgba(52,211,153,.35)" label="Met target" />
+        <Legend color="rgba(251,191,36,.35)" label="Close" />
+        <Legend color="rgba(248,113,113,.35)" label="Missed" />
+        <Legend color="transparent" label="No data" border />
+      </div>
+
+      {/* Selected day popover */}
+      {selected && (
+        <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--accent-bg)", border: "1px solid var(--accent)30", borderRadius: 8, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--accent)", letterSpacing: ".07em" }}>SELECTED</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)", marginTop: 2 }}>
+              {new Date(selected.date + "T00:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+              Recorded value: <strong style={{ color: "var(--text-primary)" }}>{formatMetricValue(selected.value!, unit)}</strong>
+            </div>
+          </div>
+          <button
+            onClick={() => setSelected(null)}
+            style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 18, padding: 0 }}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
