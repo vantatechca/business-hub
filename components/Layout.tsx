@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { signOut, useSession } from "next-auth/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { LayoutDashboard, TrendingUp, Layers, Users, CheckSquare, Calendar, DollarSign, CreditCard, Target, LogOut, Zap, Bell, Search, Plus, Check, BarChart2, UserCog, Link2, Cake, FileText, X, Send, AlertTriangle, AlertCircle } from "lucide-react";
+import { LayoutDashboard, TrendingUp, Layers, Users, CheckSquare, Calendar, DollarSign, CreditCard, Target, LogOut, Zap, Bell, Plus, Check, BarChart2, UserCog, Link2, Cake, FileText, X, Send, AlertTriangle, AlertCircle } from "lucide-react";
 import { Avatar } from "./ui/shared";
 import { useCurrency } from "@/lib/CurrencyContext";
 import { CURRENCIES } from "@/lib/currency";
@@ -25,7 +25,6 @@ const NAV = [
     {id:"tasks",l:"Tasks",h:"/tasks",I:CheckSquare},
     {id:"checkin",l:"Check-Ins",h:"/checkin",I:Calendar},
     {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake},
-    {id:"issues",l:"Issues",h:"/issues",I:AlertCircle},
   ]},
   { s:"FINANCE", items:[
     {id:"revenue",l:"Revenue",h:"/revenue",I:DollarSign},
@@ -180,10 +179,17 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
           </nav>
 
           <div style={{padding:8,borderTop:"1px solid var(--border-sidebar)",flexShrink:0}}>
-            <button onClick={()=>setTheme(isDark?"light":"dark")} className={`nav-item ${col?"justify-center":""}`} style={{fontSize:12,marginBottom:2}}>
-              <span style={{fontSize:14,lineHeight:1,width:14,display:"inline-block",textAlign:"center"}}>{isDark?"☀":"🌙"}</span>
-              {!col&&<span>{isDark?" Light mode":" Dark mode"}</span>}
-            </button>
+            {/* Issues lives here (right above the user card) instead of in
+                the OPERATIONS nav so it's always within thumb-reach for
+                reporting / triaging. */}
+            <Link
+              href="/issues"
+              aria-label="Issues"
+              className={`nav-item ${pathname === "/issues" || pathname.startsWith("/issues/") ? "active" : ""} ${col?"justify-center":""}`}
+              style={{fontSize:12,marginBottom:2}}
+            >
+              <AlertCircle size={14}/>{!col && " Issues"}
+            </Link>
             {/* Clicking the user card opens the user's own profile page where
                 they can view + edit all their details. The whole row is the
                 hit target so it's discoverable. */}
@@ -209,10 +215,6 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
           <header style={{height:"var(--topbar-height)",background:"var(--bg-sidebar)",borderBottom:"1px solid var(--border-sidebar)",display:"flex",alignItems:"center",padding:"0 18px",gap:10,flexShrink:0}}>
             <h1 style={{flex:1,fontSize:15,fontWeight:800,color:"var(--text-primary)",margin:0,letterSpacing:"-0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</h1>
-            <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--bg-input)",border:"1px solid var(--border-card)",borderRadius:"var(--radius-md)",padding:"6px 10px",width:160}}>
-              <Search size={12} style={{color:"var(--text-muted)",flexShrink:0}}/>
-              <input placeholder="Search..." style={{border:"none",background:"transparent",outline:"none",fontSize:12,color:"var(--text-primary)",width:"100%"}}/>
-            </div>
             <div style={{position:"relative"}}>
               <button
                 onClick={() => setShowCur(v => !v)}
@@ -360,6 +362,23 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
                 </div>
               )}
             </div>
+            {/* Dark mode toggle moved here from the sidebar — sits to the
+                right of the notification icon. mounted is checked to avoid
+                a hydration mismatch on the icon (next-themes resolves the
+                actual theme on the client). */}
+            <button
+              onClick={()=>setTheme(isDark?"light":"dark")}
+              aria-label="Toggle dark mode"
+              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              style={{
+                width:34,height:34,borderRadius:"var(--radius-md)",
+                border:"1px solid var(--border-card)",background:"transparent",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                cursor:"pointer",color:"var(--text-secondary)",fontSize:14,
+              }}
+            >
+              {mounted ? (isDark ? "☀" : "🌙") : "🌙"}
+            </button>
             {onNew&&<button onClick={onNew} style={{display:"flex",alignItems:"center",gap:6,background:"var(--accent)",color:"#fff",border:"none",borderRadius:"var(--radius-md)",padding:"7px 13px",fontSize:12,fontWeight:700,cursor:"pointer"}}><Plus size={13}/>{newLabel}</button>}
           </header>
           <main style={{flex:1,overflowY:"auto",padding:"16px 18px"}} className="animate-fade-in">{children}</main>
