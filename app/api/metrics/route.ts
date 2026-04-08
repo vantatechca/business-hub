@@ -23,11 +23,11 @@ export async function GET(req: NextRequest) {
   try {
     let rows;
     if (userId) {
-      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id JOIN metric_assignments ma ON ma.metric_id = m.id WHERE ma.user_id = ${userId} ORDER BY m.priority_score DESC`;
+      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id JOIN metric_assignments ma ON ma.metric_id = m.id WHERE ma.user_id = ${userId} ORDER BY m.sort_order ASC, m.priority_score DESC`;
     } else if (deptId) {
-      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id WHERE m.department_id = ${deptId} ORDER BY m.priority_score DESC, m.sort_order ASC`;
+      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id WHERE m.department_id = ${deptId} ORDER BY m.sort_order ASC, m.priority_score DESC`;
     } else {
-      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id ORDER BY d.priority_score DESC, m.priority_score DESC, m.sort_order ASC`;
+      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id ORDER BY d.sort_order ASC, m.sort_order ASC`;
     }
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]).map(coerceMetric) });
   } catch { return NextResponse.json({ error: "DB not configured" }, { status: 503 }); }

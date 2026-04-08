@@ -1,8 +1,21 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Badge, Modal, FormField, HubInput, HubSelect, useToast, ToastList } from "@/components/ui/shared";
 import type { Task, Department } from "@/lib/types";
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  closestCorners,
+  useSensor,
+  useSensors,
+  useDroppable,
+} from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
 
 const PR: Record<string,{l:string;bg:string;c:string}> = {
   urgent:{l:"Urgent",bg:"rgba(248,113,113,.15)",c:"#f87171"},
@@ -21,6 +34,10 @@ const PRIORITIES = ["urgent","high","medium","low"];
 const blank = { title:"", priority:"medium", status:"todo", departmentId: "" as string | number, departmentName:"", assigneeInitials:"", dueDate:"Today" };
 
 export default function TasksPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string })?.role ?? "member";
+  const canReorder = role === "admin" || role === "leader";
+
   const [tasks, setTasks]   = useState<Task[]>([]);
   const [depts, setDepts]   = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +45,7 @@ export default function TasksPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm]     = useState<typeof blank>({ ...blank });
   const { ts, toast }       = useToast();
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const load = () => Promise.all([
     fetch("/api/tasks").then(r => r.json()),
@@ -65,6 +83,55 @@ export default function TasksPage() {
     setForm(p => ({ ...p, departmentId: id as number, departmentName: d?.name ?? "" }));
   };
 
+  // Find which column contains a given task or column id
+  const findColumn = (id: string | number): Task["status"] | null => {
+    if (id === "todo" || id === "in-progress" || id === "done") return id as Task["status"];
+    const t = tasks.find(t => String(t.id) === String(id));
+    return t ? t.status : null;
+  };
+
+  const handleDragEnd = async (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over) return;
+    const fromCol = findColumn(active.id);
+    const toCol = findColumn(over.id);
+    if (!fromCol || !toCol) return;
+
+    // Compute new task order
+    const activeTask = tasks.find(t => String(t.id) === String(active.id));
+    if (!activeTask) return;
+
+    let next = tasks.slice();
+    const fromIdx = next.findIndex(t => String(t.id) === String(active.id));
+    if (fromIdx === -1) return;
+    const [moved] = next.splice(fromIdx, 1);
+    moved.status = toCol;
+
+    if (over.id === toCol) {
+      // Dropped on the column container itself — append to end of column
+      const lastIdxOfCol = next.reduce((acc, t, i) => t.status === toCol ? i : acc, -1);
+      next.splice(lastIdxOfCol + 1, 0, moved);
+    } else {
+      const overIdx = next.findIndex(t => String(t.id) === String(over.id));
+      if (overIdx === -1) {
+        next.push(moved);
+      } else {
+        next.splice(overIdx, 0, moved);
+      }
+    }
+
+    setTasks(next);
+
+    // Persist: send full ordered list with status + sortOrder
+    const items = next.map((t, i) => ({ id: t.id, status: t.status, sortOrder: i }));
+    const res = await fetch("/api/tasks/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    if (!res.ok) { toast("Reorder failed", "er"); await load(); }
+  };
+
   return (
     <AppLayout title="Tasks" onNew={() => openAdd()} newLabel="Add Task">
       <ToastList ts={ts} />
@@ -81,40 +148,24 @@ export default function TasksPage() {
           {[0,1,2].map(i => <div key={i} className="skeleton" style={{ height:300, borderRadius:12 }} />)}
         </div>
       ) : (
-        <div style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
-          {COLS.map(col => {
-            const items = ft.filter(t => t.status === col.key);
-            return (
-              <div key={col.key} style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", gap:9 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:4 }}>
-                  <div style={{ width:8, height:8, borderRadius:"50%", background:col.color }} />
-                  <span style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)" }}>{col.label}</span>
-                  <span style={{ fontSize:10, fontWeight:700, background:"var(--bg-input)", color:"var(--text-secondary)", padding:"1px 7px", borderRadius:10 }}>{items.length}</span>
-                </div>
-                {items.map(t => {
-                  const pr = PR[t.priority];
-                  return (
-                    <div key={t.id} className="hub-card" style={{ padding:13 }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:9 }}>
-                        <Badge bg={pr.bg} color={pr.c}>{pr.l}</Badge>
-                        <Avatar s={t.assigneeInitials ?? "?"} size={24} />
-                      </div>
-                      <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", marginBottom:7, lineHeight:1.4 }}>{t.title}</div>
-                      <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:10 }}>
-                        {t.departmentName} · <span style={{ color:t.dueDate==="Today"?"var(--danger)":"var(--text-secondary)" }}>⏱ {t.dueDate}</span>
-                      </div>
-                      <div style={{ display:"flex", gap:6 }}>
-                        <button onClick={() => advance(t)} style={{ flex:1, padding:"5px 7px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>{NL[t.status]}</button>
-                        <button onClick={() => del(t.id)} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
-                      </div>
-                    </div>
-                  );
-                })}
-                <button onClick={() => openAdd(col.key)} style={{ padding:"9px", borderRadius:9, border:"1px dashed var(--border-card)", background:"transparent", color:"var(--text-muted)", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:5, cursor:"pointer" }}>+ Add task</button>
-              </div>
-            );
-          })}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={canReorder ? handleDragEnd : undefined}>
+          <div style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+            {COLS.map(col => {
+              const items = ft.filter(t => t.status === col.key);
+              return (
+                <KanbanColumn
+                  key={col.key}
+                  col={col}
+                  items={items}
+                  dragEnabled={canReorder}
+                  onAdvance={advance}
+                  onDelete={del}
+                  onAdd={() => openAdd(col.key)}
+                />
+              );
+            })}
+          </div>
+        </DndContext>
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Task">
@@ -148,5 +199,83 @@ export default function TasksPage() {
         </div>
       </Modal>
     </AppLayout>
+  );
+}
+
+function KanbanColumn({
+  col,
+  items,
+  dragEnabled,
+  onAdvance,
+  onDelete,
+  onAdd,
+}: {
+  col: { key: string; label: string; color: string };
+  items: Task[];
+  dragEnabled: boolean;
+  onAdvance: (t: Task) => void;
+  onDelete: (id: string | number) => void;
+  onAdd: () => void;
+}) {
+  const { setNodeRef } = useDroppable({ id: col.key });
+  return (
+    <div ref={dragEnabled ? setNodeRef : undefined} style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", gap:9 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:4 }}>
+        <div style={{ width:8, height:8, borderRadius:"50%", background:col.color }} />
+        <span style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)" }}>{col.label}</span>
+        <span style={{ fontSize:10, fontWeight:700, background:"var(--bg-input)", color:"var(--text-secondary)", padding:"1px 7px", borderRadius:10 }}>{items.length}</span>
+      </div>
+      <SortableContext items={items.map(t => String(t.id))} strategy={verticalListSortingStrategy}>
+        {items.map(t => (
+          <TaskCard key={t.id} t={t} dragEnabled={dragEnabled} onAdvance={() => onAdvance(t)} onDelete={() => onDelete(t.id)} />
+        ))}
+      </SortableContext>
+      <button onClick={onAdd} style={{ padding:"9px", borderRadius:9, border:"1px dashed var(--border-card)", background:"transparent", color:"var(--text-muted)", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:5, cursor:"pointer" }}>+ Add task</button>
+    </div>
+  );
+}
+
+function TaskCard({
+  t,
+  dragEnabled,
+  onAdvance,
+  onDelete,
+}: {
+  t: Task;
+  dragEnabled: boolean;
+  onAdvance: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: String(t.id), disabled: !dragEnabled });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  const pr = PR[t.priority];
+  return (
+    <div ref={setNodeRef} style={style} className="hub-card">
+      <div style={{ padding:13 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:9 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            {dragEnabled && (
+              <button {...attributes} {...listeners} aria-label="Drag" style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"grab", padding:0, touchAction:"none", display:"flex" }} onClick={e => e.stopPropagation()}>
+                <GripVertical size={14} />
+              </button>
+            )}
+            <Badge bg={pr.bg} color={pr.c}>{pr.l}</Badge>
+          </div>
+          <Avatar s={t.assigneeInitials ?? "?"} size={24} />
+        </div>
+        <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", marginBottom:7, lineHeight:1.4 }}>{t.title}</div>
+        <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:10 }}>
+          {t.departmentName} · <span style={{ color:t.dueDate==="Today"?"var(--danger)":"var(--text-secondary)" }}>⏱ {t.dueDate}</span>
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          <button onClick={onAdvance} style={{ flex:1, padding:"5px 7px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>{NL[t.status]}</button>
+          <button onClick={onDelete} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, healthColor, useToast, ToastList, EmptyState } from "@/components/ui/shared";
+import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
 import type { Department } from "@/lib/types";
 
 const ICONS = ["💼","⚙️","📣","📊","👥","🔧","🎯","⭐","⚖️","🏗️","🌐","💡","🔬","📦","🎨","🧬","🚀","💰","📱","🎓"];
@@ -10,6 +12,10 @@ const COLORS = ["#5b8ef8","#34d399","#a78bfa","#fbbf24","#f87171","#22d3ee","#84
 const blank = { name:"", head:"", icon:"💼", color:COLORS[0], health:80, memberCount:1 };
 
 export default function DepartmentsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string })?.role ?? "member";
+  const canReorder = role === "admin" || role === "leader";
+
   const [depts, setDepts] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -17,6 +23,18 @@ export default function DepartmentsPage() {
   const [deleting, setDeleting] = useState<Department | null>(null);
   const [form, setForm] = useState(blank);
   const { ts, toast } = useToast();
+
+  const handleReorder = async (ids: (string | number)[]) => {
+    const map = new Map(depts.map(d => [String(d.id), d]));
+    const next = ids.map(id => map.get(String(id))).filter(Boolean) as Department[];
+    setDepts(next);
+    const res = await fetch("/api/departments/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) { toast("Reorder failed", "er"); await load(); }
+  };
 
   const load = () => fetch("/api/departments").then(r => r.json()).then(d => { setDepts(d.data ?? []); setLoading(false); });
   useEffect(() => { load(); }, []);
@@ -75,29 +93,19 @@ export default function DepartmentsPage() {
       ) : depts.length === 0 ? (
         <EmptyState icon="⬡" title="No departments yet" desc="Add your first department to get started." action={<button onClick={openAdd} style={{ padding:"8px 18px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>Add Department</button>} />
       ) : (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:12 }} className="stagger-children">
-          {depts.map(d => (
-            <Card key={d.id}>
-              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-                <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
-                  <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.description ?? ""}</div>
-                </div>
-                <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${healthColor(d.health ?? 0)}1a`, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div>
-              </div>
-              <div style={{ display:"flex", gap:20, marginBottom:10 }}>
-                <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount ?? 0}</div></div>
-                <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div></div>
-              </div>
-              <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} />
-              <div style={{ display:"flex", gap:8, marginTop:12 }}>
-                <button onClick={() => openEdit(d)} style={{ flex:1, padding:"6px 12px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Edit</button>
-                <button onClick={() => setDeleting(d)} style={{ padding:"6px 12px", borderRadius:8, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:12, fontWeight:700, cursor:"pointer" }}>Delete</button>
-              </div>
-            </Card>
-          ))}
-        </div>
+        <Sortable items={depts} onReorder={handleReorder} strategy="grid" disabled={!canReorder}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:12 }} className="stagger-children">
+            {depts.map(d => (
+              <DeptCard
+                key={d.id}
+                d={d}
+                dragEnabled={canReorder}
+                onEdit={() => openEdit(d)}
+                onDelete={() => setDeleting(d)}
+              />
+            ))}
+          </div>
+        </Sortable>
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Department">
@@ -118,5 +126,43 @@ export default function DepartmentsPage() {
 
       <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={del} name={deleting?.name ?? ""} entity="department" />
     </AppLayout>
+  );
+}
+
+function DeptCard({
+  d,
+  dragEnabled,
+  onEdit,
+  onDelete,
+}: {
+  d: Department;
+  dragEnabled: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { setNodeRef, style, listeners, attributes } = useSortableItem(d.id);
+  return (
+    <div ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
+      <Card>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+          {dragEnabled && <DragHandle listeners={listeners} attributes={attributes} />}
+          <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
+            <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.description ?? ""}</div>
+          </div>
+          <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${healthColor(d.health ?? 0)}1a`, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div>
+        </div>
+        <div style={{ display:"flex", gap:20, marginBottom:10 }}>
+          <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount ?? 0}</div></div>
+          <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div></div>
+        </div>
+        <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} />
+        <div style={{ display:"flex", gap:8, marginTop:12 }}>
+          <button onClick={onEdit} style={{ flex:1, padding:"6px 12px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Edit</button>
+          <button onClick={onDelete} style={{ padding:"6px 12px", borderRadius:8, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:12, fontWeight:700, cursor:"pointer" }}>Delete</button>
+        </div>
+      </Card>
+    </div>
   );
 }

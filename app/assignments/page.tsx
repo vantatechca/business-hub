@@ -1,13 +1,19 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Modal, FormField, HubSelect, useToast, ToastList, priorityColor } from "@/components/ui/shared";
+import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
 import type { Metric, User, MetricAssignment } from "@/lib/types";
 import { getInitials } from "@/lib/types";
 
 const ROLE_COLORS: Record<string,string> = { owner:"var(--warning)", contributor:"var(--accent)", reviewer:"var(--violet)" };
 
 export default function AssignmentsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string })?.role ?? "member";
+  const canReorder = role === "admin" || role === "leader";
+
   const [metrics, setMetrics]       = useState<Metric[]>([]);
   const [users, setUsers]           = useState<User[]>([]);
   const [assignments, setAssignments] = useState<MetricAssignment[]>([]);
@@ -52,6 +58,8 @@ export default function AssignmentsPage() {
   };
 
   const filtered = metrics.filter(m => m.name.toLowerCase().includes(q.toLowerCase()) || (m.departmentName ?? "").toLowerCase().includes(q.toLowerCase()));
+  const filterActive = !!q;
+  const dragEnabled = canReorder && !filterActive;
 
   // Group by department
   const byDept = filtered.reduce((acc, m) => {
@@ -60,6 +68,30 @@ export default function AssignmentsPage() {
     acc[k].push(m);
     return acc;
   }, {} as Record<string, Metric[]>);
+
+  // Reorder metrics within a single department group, then persist global order
+  const handleGroupReorder = async (deptKey: string, newIds: (string | number)[]) => {
+    // Build the new local-state order: for each existing metric, replace its position
+    // within its department group with the dragged order.
+    const reorderedSet = new Set(newIds.map(String));
+    const replacements = newIds.map(id => metrics.find(m => String(m.id) === String(id))).filter(Boolean) as Metric[];
+    let cursor = 0;
+    const next = metrics.map(m => {
+      if ((m.departmentName ?? "Other") === deptKey && reorderedSet.has(String(m.id))) {
+        const r = replacements[cursor++];
+        return r;
+      }
+      return m;
+    });
+    setMetrics(next);
+    const allIds = next.map(m => m.id);
+    const res = await fetch("/api/metrics/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: allIds }),
+    });
+    if (!res.ok) { toast("Reorder failed", "er"); await load(); }
+  };
 
   const assignedUsers = selected ? users.filter(u => !assignments.some(a => a.metricId === selected.id && a.userId === u.id)) : users;
 
@@ -82,44 +114,24 @@ export default function AssignmentsPage() {
           {Object.entries(byDept).map(([dept, dMetrics]) => (
             <div key={dept}>
               <div style={{ fontSize:11, fontWeight:800, color:"var(--text-muted)", letterSpacing:".1em", marginBottom:9, textTransform:"uppercase" }}>{dept}</div>
-              <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
-                {dMetrics.map(m => {
-                  const assignees = metricAssignees(m.id);
-                  const pc = priorityColor(m.priorityScore);
-                  return (
-                    <div key={m.id} className="hub-card" style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:14 }}>
-                      {/* Priority badge */}
-                      <span style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:800, background:`${pc}18`, color:pc, flexShrink:0 }}>
-                        {m.priorityScore}
-                      </span>
-                      {/* Metric info */}
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.name}</div>
-                        <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>{m.metricType.replace(/_/g," ")} · {m.direction.replace(/_/g," ")}</div>
-                      </div>
-                      {/* Assignees */}
-                      <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-                        {assignees.length === 0 ? (
-                          <span style={{ fontSize:11, color:"var(--text-muted)" }}>Unassigned</span>
-                        ) : (
-                          <div style={{ display:"flex", gap:4 }}>
-                            {assignees.slice(0,5).map(a => (
-                              <div key={a.id} title={`${a.userName} · ${a.roleInMetric}`} style={{ position:"relative" }}>
-                                <Avatar s={a.userInitials ?? getInitials(a.userName ?? "?")} size={26}/>
-                                <div style={{ position:"absolute", bottom:-2, right:-2, width:8, height:8, borderRadius:"50%", background:ROLE_COLORS[a.roleInMetric] ?? "var(--accent)", border:"1.5px solid var(--bg-card)" }}/>
-                              </div>
-                            ))}
-                            {assignees.length > 5 && <span style={{ fontSize:10, color:"var(--text-secondary)", alignSelf:"center" }}>+{assignees.length-5}</span>}
-                          </div>
-                        )}
-                        <button onClick={() => { setSelected(m); setAForm({ userId: assignedUsers[0]?.id ?? "", roleInMetric:"contributor" }); setShowAssign(true); }} style={{ padding:"4px 10px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>
-                          + Assign
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <Sortable
+                items={dMetrics}
+                onReorder={ids => handleGroupReorder(dept, ids)}
+                strategy="vertical"
+                disabled={!dragEnabled}
+              >
+                <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+                  {dMetrics.map(m => (
+                    <AssignmentRow
+                      key={m.id}
+                      m={m}
+                      dragEnabled={dragEnabled}
+                      assignees={metricAssignees(m.id)}
+                      onAssign={() => { setSelected(m); setAForm({ userId: assignedUsers[0]?.id ?? "", roleInMetric:"contributor" }); setShowAssign(true); }}
+                    />
+                  ))}
+                </div>
+              </Sortable>
             </div>
           ))}
         </div>
@@ -164,5 +176,56 @@ export default function AssignmentsPage() {
         </div>
       </Modal>
     </AppLayout>
+  );
+}
+
+function AssignmentRow({
+  m,
+  dragEnabled,
+  assignees,
+  onAssign,
+}: {
+  m: Metric;
+  dragEnabled: boolean;
+  assignees: MetricAssignment[];
+  onAssign: () => void;
+}) {
+  const { setNodeRef, style, listeners, attributes } = useSortableItem(m.id);
+  const pc = priorityColor(m.priorityScore);
+  return (
+    <div
+      ref={dragEnabled ? setNodeRef : undefined}
+      style={dragEnabled ? style : undefined}
+      className="hub-card"
+    >
+      <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:14 }}>
+        {dragEnabled && <DragHandle listeners={listeners} attributes={attributes} />}
+        <span style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:800, background:`${pc}18`, color:pc, flexShrink:0 }}>
+          {m.priorityScore}
+        </span>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.name}</div>
+          <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>{m.metricType.replace(/_/g," ")} · {m.direction.replace(/_/g," ")}</div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+          {assignees.length === 0 ? (
+            <span style={{ fontSize:11, color:"var(--text-muted)" }}>Unassigned</span>
+          ) : (
+            <div style={{ display:"flex", gap:4 }}>
+              {assignees.slice(0,5).map(a => (
+                <div key={a.id} title={`${a.userName} · ${a.roleInMetric}`} style={{ position:"relative" }}>
+                  <Avatar s={a.userInitials ?? getInitials(a.userName ?? "?")} size={26}/>
+                  <div style={{ position:"absolute", bottom:-2, right:-2, width:8, height:8, borderRadius:"50%", background:ROLE_COLORS[a.roleInMetric] ?? "var(--accent)", border:"1.5px solid var(--bg-card)" }}/>
+                </div>
+              ))}
+              {assignees.length > 5 && <span style={{ fontSize:10, color:"var(--text-secondary)", alignSelf:"center" }}>+{assignees.length-5}</span>}
+            </div>
+          )}
+          <button onClick={onAssign} style={{ padding:"4px 10px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>
+            + Assign
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

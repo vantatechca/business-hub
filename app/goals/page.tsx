@@ -1,13 +1,19 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState, formatValue } from "@/components/ui/shared";
+import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
 import type { Goal } from "@/lib/types";
 
 const COLORS = ["#34d399","#5b8ef8","#a78bfa","#fbbf24","#f87171","#22d3ee","#fb923c","#6366f1","#84cc16","#e879f9"];
 const blank = { name:"", target:100, current:0, format:"number" as Goal["format"], color:COLORS[0] };
 
 export default function GoalsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string })?.role ?? "member";
+  const canReorder = role === "admin" || role === "leader";
+
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -15,6 +21,18 @@ export default function GoalsPage() {
   const [deleting, setDeleting] = useState<Goal | null>(null);
   const [form, setForm] = useState<typeof blank>({ ...blank });
   const { ts, toast } = useToast();
+
+  const handleReorder = async (ids: (string | number)[]) => {
+    const map = new Map(goals.map(g => [String(g.id), g]));
+    const next = ids.map(id => map.get(String(id))).filter(Boolean) as Goal[];
+    setGoals(next);
+    const res = await fetch("/api/goals/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) { toast("Reorder failed", "er"); await load(); }
+  };
 
   const load = () => fetch("/api/goals").then(r => r.json()).then(d => { setGoals(d.data ?? []); setLoading(false); });
   useEffect(() => { load(); }, []);
@@ -67,10 +85,6 @@ export default function GoalsPage() {
     </div>
   );
 
-  const ActionBtn = ({ onClick, children, style={} }: { onClick:()=>void; children:React.ReactNode; style?:React.CSSProperties }) => (
-    <button onClick={onClick} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", ...style }}>{children}</button>
-  );
-
   return (
     <AppLayout title="Goals & OKRs" onNew={() => { setForm({...blank}); setShowAdd(true); }} newLabel="Add Goal">
       <ToastList ts={ts} />
@@ -85,33 +99,20 @@ export default function GoalsPage() {
       ) : goals.length === 0 ? (
         <EmptyState icon="◉" title="No goals yet" desc="Set your first goal to start tracking progress." action={<button onClick={() => setShowAdd(true)} style={{ padding:"8px 18px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>Add Goal</button>} />
       ) : (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))", gap:12 }} className="stagger-children">
-          {goals.map(g => {
-            const pct = Math.min(100, (g.current / Math.max(g.target, 1)) * 100);
-            const done = pct >= 100;
-            return (
-              <Card key={g.id}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-                  <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", flex:1, marginRight:8 }}>{g.name}</div>
-                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    {done && <span style={{ fontSize:14 }}>🎉</span>}
-                    <div style={{ fontSize:14, fontWeight:800, color:g.color }}>{Math.round(pct)}%</div>
-                  </div>
-                </div>
-                <ProgressBar value={pct} color={g.color} height={8} />
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-secondary)", marginTop:8, marginBottom:12 }}>
-                  <span>Current: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.current, g.format)}</strong></span>
-                  <span>Target: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.target, g.format)}</strong></span>
-                </div>
-                <div style={{ display:"flex", gap:7 }}>
-                  {!done && <button onClick={() => bump(g)} style={{ flex:1, padding:"5px 8px", borderRadius:7, border:`1px solid ${g.color}44`, background:`${g.color}11`, color:g.color, fontSize:11, fontWeight:700, cursor:"pointer" }}>+5% Progress</button>}
-                  <ActionBtn onClick={() => { setEditing(g); setForm({ name:g.name, target:g.target, current:g.current, format:g.format, color:g.color }); }}>Edit</ActionBtn>
-                  <ActionBtn onClick={() => setDeleting(g)} style={{ background:"var(--danger-bg)", color:"var(--danger)", borderColor:"rgba(220,38,38,.3)" }}>✕</ActionBtn>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+        <Sortable items={goals} onReorder={handleReorder} strategy="grid" disabled={!canReorder}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))", gap:12 }} className="stagger-children">
+            {goals.map(g => (
+              <GoalCard
+                key={g.id}
+                g={g}
+                dragEnabled={canReorder}
+                onBump={() => bump(g)}
+                onEdit={() => { setEditing(g); setForm({ name:g.name, target:g.target, current:g.current, format:g.format, color:g.color }); }}
+                onDelete={() => setDeleting(g)}
+              />
+            ))}
+          </div>
+        </Sortable>
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Goal">
@@ -132,5 +133,49 @@ export default function GoalsPage() {
 
       <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={del} name={deleting?.name ?? ""} entity="goal" />
     </AppLayout>
+  );
+}
+
+function GoalCard({
+  g,
+  dragEnabled,
+  onBump,
+  onEdit,
+  onDelete,
+}: {
+  g: Goal;
+  dragEnabled: boolean;
+  onBump: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { setNodeRef, style, listeners, attributes } = useSortableItem(g.id);
+  const pct = Math.min(100, (g.current / Math.max(g.target, 1)) * 100);
+  const done = pct >= 100;
+  return (
+    <div ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, marginRight:8, minWidth:0 }}>
+            {dragEnabled && <DragHandle listeners={listeners} attributes={attributes} />}
+            <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{g.name}</div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            {done && <span style={{ fontSize:14 }}>🎉</span>}
+            <div style={{ fontSize:14, fontWeight:800, color:g.color }}>{Math.round(pct)}%</div>
+          </div>
+        </div>
+        <ProgressBar value={pct} color={g.color} height={8} />
+        <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-secondary)", marginTop:8, marginBottom:12 }}>
+          <span>Current: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.current, g.format)}</strong></span>
+          <span>Target: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.target, g.format)}</strong></span>
+        </div>
+        <div style={{ display:"flex", gap:7 }}>
+          {!done && <button onClick={onBump} style={{ flex:1, padding:"5px 8px", borderRadius:7, border:`1px solid ${g.color}44`, background:`${g.color}11`, color:g.color, fontSize:11, fontWeight:700, cursor:"pointer" }}>+5% Progress</button>}
+          <button onClick={onEdit} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)" }}>Edit</button>
+          <button onClick={onDelete} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", background:"var(--danger-bg)", color:"var(--danger)", borderColor:"rgba(220,38,38,.3)", border:"1px solid rgba(220,38,38,.3)" }}>✕</button>
+        </div>
+      </Card>
+    </div>
   );
 }
