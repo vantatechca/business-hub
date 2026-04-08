@@ -63,10 +63,6 @@ export default function TeamPage() {
   const myId = (session?.user as { id?: string })?.id;
   const isAdmin = myRole === "admin" || myRole === "super_admin";
   const isSuperAdmin = myRole === "super_admin";
-  // "Mark In" toggles a teammate's daily check-in. Manager / admin / super
-  // admin can flip it; lead and member can't (the button is hidden + the
-  // API enforces the same rule).
-  const canMarkIn = myRole === "manager" || isAdmin;
   // Lead and member shouldn't see other people's role / status — only
   // their job title and department membership. Hide both columns
   // entirely for those roles. Manager+ keeps the full view.
@@ -215,15 +211,6 @@ export default function TeamPage() {
     toast("Member deleted", "wa");
   };
 
-  const toggleCI = async (m: TeamMember) => {
-    await fetch(`/api/team/${m.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ checkedInToday: !m.checkedInToday }),
-    });
-    setTeam(p => p.map(x => (String(x.id) === String(m.id) ? { ...x, checkedInToday: !x.checkedInToday } : x)));
-  };
-
   // Reusable form JSX (NOT a component — defining as a value keeps inputs
   // focus-safe across re-renders).
   const memberForm = (
@@ -336,7 +323,6 @@ export default function TeamPage() {
                 if (canSeeRoleAndStatus) headers.push("Role");
                 headers.push("Departments");
                 if (canSeeRoleAndStatus) headers.push("Status");
-                if (canMarkIn) headers.push("Check-In");
                 headers.push(""); // actions cell
                 return <tr>{headers.map(h => <th key={h || "actions"}>{h}</th>)}</tr>;
               })()}
@@ -386,16 +372,6 @@ export default function TeamPage() {
                         <div style={{ width: 6, height: 6, borderRadius: "50%", background: SCOL[m.status] }} />
                         <span style={{ fontSize: 11, color: SCOL[m.status], fontWeight: 600, textTransform: "capitalize" }}>{m.status}</span>
                       </div>
-                    </td>
-                  )}
-                  {canMarkIn && (
-                    <td onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => toggleCI(m)}
-                        style={{ padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, background: m.checkedInToday ? "var(--success-bg)" : "var(--bg-input)", color: m.checkedInToday ? "var(--success)" : "var(--text-secondary)" }}
-                      >
-                        {m.checkedInToday ? "✓ Done" : "Mark In"}
-                      </button>
                     </td>
                   )}
                   <td onClick={e => e.stopPropagation()}>
