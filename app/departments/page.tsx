@@ -4,7 +4,8 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import AppLayout from "@/components/Layout";
 import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, healthColor, useToast, ToastList, EmptyState } from "@/components/ui/shared";
-import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
+import { Sortable, useSortableItem, DragHandle, overlayCardStyle } from "@/components/ui/Sortable";
+import { GripVertical } from "lucide-react";
 import type { Department } from "@/lib/types";
 
 const ICONS = ["💼","⚙️","📣","📊","👥","🔧","🎯","⭐","⚖️","🏗️","🌐","💡","🔬","📦","🎨","🧬","🚀","💰","📱","🎓"];
@@ -94,7 +95,13 @@ export default function DepartmentsPage() {
       ) : depts.length === 0 ? (
         <EmptyState icon="⬡" title="No departments yet" desc="Add your first department to get started." action={<button onClick={openAdd} style={{ padding:"8px 18px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>Add Department</button>} />
       ) : (
-        <Sortable items={depts} onReorder={handleReorder} strategy="grid" disabled={!canReorder}>
+        <Sortable
+          items={depts}
+          onReorder={handleReorder}
+          strategy="grid"
+          disabled={!canReorder}
+          renderOverlay={d => <DeptCardPreview d={d} />}
+        >
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:12 }} className="stagger-children">
             {depts.map(d => (
               <DeptCard
@@ -130,6 +137,36 @@ export default function DepartmentsPage() {
   );
 }
 
+function DeptCardBody({
+  d,
+  dragHandle,
+  actions,
+}: {
+  d: Department;
+  dragHandle?: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+        {dragHandle}
+        <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
+          <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.description ?? ""}</div>
+        </div>
+        <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${healthColor(d.health ?? 0)}1a`, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div>
+      </div>
+      <div style={{ display:"flex", gap:20, marginBottom:10 }}>
+        <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount ?? 0}</div></div>
+        <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div></div>
+      </div>
+      <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} />
+      {actions}
+    </Card>
+  );
+}
+
 function DeptCard({
   d,
   dragEnabled,
@@ -145,30 +182,32 @@ function DeptCard({
   const { setNodeRef, style, listeners, attributes } = useSortableItem(d.id);
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   const goToDetail = () => router.push(`/departments/${d.id}`);
+  const handle = dragEnabled ? (
+    <span onClick={stop}><DragHandle listeners={listeners} attributes={attributes} /></span>
+  ) : undefined;
+  const actions = (
+    <div style={{ display:"flex", gap:8, marginTop:12 }} onClick={stop}>
+      <button onClick={onEdit} style={{ flex:1, padding:"6px 12px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Edit</button>
+      <button onClick={onDelete} style={{ padding:"6px 12px", borderRadius:8, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:12, fontWeight:700, cursor:"pointer" }}>Delete</button>
+    </div>
+  );
   return (
     <div ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
-      <div onClick={goToDetail} style={{ cursor: "pointer" }}>
-        <Card className="hub-card-hover">
-          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-            {dragEnabled && <span onClick={stop}><DragHandle listeners={listeners} attributes={attributes} /></span>}
-            <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
-              <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.description ?? ""}</div>
-            </div>
-            <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${healthColor(d.health ?? 0)}1a`, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div>
-          </div>
-          <div style={{ display:"flex", gap:20, marginBottom:10 }}>
-            <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount ?? 0}</div></div>
-            <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div></div>
-          </div>
-          <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} />
-          <div style={{ display:"flex", gap:8, marginTop:12 }} onClick={stop}>
-            <button onClick={onEdit} style={{ flex:1, padding:"6px 12px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Edit</button>
-            <button onClick={onDelete} style={{ padding:"6px 12px", borderRadius:8, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:12, fontWeight:700, cursor:"pointer" }}>Delete</button>
-          </div>
-        </Card>
+      <div onClick={goToDetail} style={{ cursor: "pointer" }} className="hub-card-hover">
+        <DeptCardBody d={d} dragHandle={handle} actions={actions} />
       </div>
+    </div>
+  );
+}
+
+// Floating clone rendered inside DragOverlay — follows the cursor across the page
+function DeptCardPreview({ d }: { d: Department }) {
+  return (
+    <div style={overlayCardStyle}>
+      <DeptCardBody
+        d={d}
+        dragHandle={<GripVertical size={14} style={{ color: "var(--text-muted)" }} />}
+      />
     </div>
   );
 }

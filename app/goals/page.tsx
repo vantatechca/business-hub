@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState, formatValue } from "@/components/ui/shared";
-import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
+import { Sortable, useSortableItem, DragHandle, overlayCardStyle } from "@/components/ui/Sortable";
+import { GripVertical } from "lucide-react";
 import type { Goal } from "@/lib/types";
 
 const COLORS = ["#34d399","#5b8ef8","#a78bfa","#fbbf24","#f87171","#22d3ee","#fb923c","#6366f1","#84cc16","#e879f9"];
@@ -99,7 +100,13 @@ export default function GoalsPage() {
       ) : goals.length === 0 ? (
         <EmptyState icon="◉" title="No goals yet" desc="Set your first goal to start tracking progress." action={<button onClick={() => setShowAdd(true)} style={{ padding:"8px 18px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>Add Goal</button>} />
       ) : (
-        <Sortable items={goals} onReorder={handleReorder} strategy="grid" disabled={!canReorder}>
+        <Sortable
+          items={goals}
+          onReorder={handleReorder}
+          strategy="grid"
+          disabled={!canReorder}
+          renderOverlay={g => <GoalCardPreview g={g} />}
+        >
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))", gap:12 }} className="stagger-children">
             {goals.map(g => (
               <GoalCard
@@ -136,6 +143,39 @@ export default function GoalsPage() {
   );
 }
 
+function GoalCardBody({
+  g,
+  dragHandle,
+  actions,
+}: {
+  g: Goal;
+  dragHandle?: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
+  const pct = Math.min(100, (g.current / Math.max(g.target, 1)) * 100);
+  const done = pct >= 100;
+  return (
+    <Card>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, marginRight:8, minWidth:0 }}>
+          {dragHandle}
+          <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{g.name}</div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          {done && <span style={{ fontSize:14 }}>🎉</span>}
+          <div style={{ fontSize:14, fontWeight:800, color:g.color }}>{Math.round(pct)}%</div>
+        </div>
+      </div>
+      <ProgressBar value={pct} color={g.color} height={8} />
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-secondary)", marginTop:8, marginBottom:12 }}>
+        <span>Current: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.current, g.format)}</strong></span>
+        <span>Target: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.target, g.format)}</strong></span>
+      </div>
+      {actions}
+    </Card>
+  );
+}
+
 function GoalCard({
   g,
   dragEnabled,
@@ -152,30 +192,28 @@ function GoalCard({
   const { setNodeRef, style, listeners, attributes } = useSortableItem(g.id);
   const pct = Math.min(100, (g.current / Math.max(g.target, 1)) * 100);
   const done = pct >= 100;
+  const handle = dragEnabled ? <DragHandle listeners={listeners} attributes={attributes} /> : undefined;
+  const actions = (
+    <div style={{ display:"flex", gap:7 }}>
+      {!done && <button onClick={onBump} style={{ flex:1, padding:"5px 8px", borderRadius:7, border:`1px solid ${g.color}44`, background:`${g.color}11`, color:g.color, fontSize:11, fontWeight:700, cursor:"pointer" }}>+5% Progress</button>}
+      <button onClick={onEdit} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)" }}>Edit</button>
+      <button onClick={onDelete} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", background:"var(--danger-bg)", color:"var(--danger)", borderColor:"rgba(220,38,38,.3)", border:"1px solid rgba(220,38,38,.3)" }}>✕</button>
+    </div>
+  );
   return (
     <div ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
-      <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, marginRight:8, minWidth:0 }}>
-            {dragEnabled && <DragHandle listeners={listeners} attributes={attributes} />}
-            <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{g.name}</div>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            {done && <span style={{ fontSize:14 }}>🎉</span>}
-            <div style={{ fontSize:14, fontWeight:800, color:g.color }}>{Math.round(pct)}%</div>
-          </div>
-        </div>
-        <ProgressBar value={pct} color={g.color} height={8} />
-        <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-secondary)", marginTop:8, marginBottom:12 }}>
-          <span>Current: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.current, g.format)}</strong></span>
-          <span>Target: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.target, g.format)}</strong></span>
-        </div>
-        <div style={{ display:"flex", gap:7 }}>
-          {!done && <button onClick={onBump} style={{ flex:1, padding:"5px 8px", borderRadius:7, border:`1px solid ${g.color}44`, background:`${g.color}11`, color:g.color, fontSize:11, fontWeight:700, cursor:"pointer" }}>+5% Progress</button>}
-          <button onClick={onEdit} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)" }}>Edit</button>
-          <button onClick={onDelete} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", background:"var(--danger-bg)", color:"var(--danger)", borderColor:"rgba(220,38,38,.3)", border:"1px solid rgba(220,38,38,.3)" }}>✕</button>
-        </div>
-      </Card>
+      <GoalCardBody g={g} dragHandle={handle} actions={actions} />
+    </div>
+  );
+}
+
+function GoalCardPreview({ g }: { g: Goal }) {
+  return (
+    <div style={overlayCardStyle}>
+      <GoalCardBody
+        g={g}
+        dragHandle={<GripVertical size={14} style={{ color: "var(--text-muted)" }} />}
+      />
     </div>
   );
 }

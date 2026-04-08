@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Modal, FormField, HubSelect, useToast, ToastList, priorityColor } from "@/components/ui/shared";
-import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
+import { Sortable, useSortableItem, DragHandle, overlayCardStyle } from "@/components/ui/Sortable";
+import { GripVertical } from "lucide-react";
 import type { Metric, User, MetricAssignment } from "@/lib/types";
 import { getInitials } from "@/lib/types";
 
@@ -119,6 +120,7 @@ export default function AssignmentsPage() {
                 onReorder={ids => handleGroupReorder(dept, ids)}
                 strategy="vertical"
                 disabled={!dragEnabled}
+                renderOverlay={m => <AssignmentRowPreview m={m} assignees={metricAssignees(m.id)} />}
               >
                 <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
                   {dMetrics.map(m => (
@@ -179,27 +181,22 @@ export default function AssignmentsPage() {
   );
 }
 
-function AssignmentRow({
+function AssignmentRowBody({
   m,
-  dragEnabled,
   assignees,
-  onAssign,
+  dragHandle,
+  actions,
 }: {
   m: Metric;
-  dragEnabled: boolean;
   assignees: MetricAssignment[];
-  onAssign: () => void;
+  dragHandle?: React.ReactNode;
+  actions?: React.ReactNode;
 }) {
-  const { setNodeRef, style, listeners, attributes } = useSortableItem(m.id);
   const pc = priorityColor(m.priorityScore);
   return (
-    <div
-      ref={dragEnabled ? setNodeRef : undefined}
-      style={dragEnabled ? style : undefined}
-      className="hub-card"
-    >
+    <div className="hub-card">
       <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:14 }}>
-        {dragEnabled && <DragHandle listeners={listeners} attributes={attributes} />}
+        {dragHandle}
         <span style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:800, background:`${pc}18`, color:pc, flexShrink:0 }}>
           {m.priorityScore}
         </span>
@@ -221,11 +218,46 @@ function AssignmentRow({
               {assignees.length > 5 && <span style={{ fontSize:10, color:"var(--text-secondary)", alignSelf:"center" }}>+{assignees.length-5}</span>}
             </div>
           )}
-          <button onClick={onAssign} style={{ padding:"4px 10px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>
-            + Assign
-          </button>
+          {actions}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AssignmentRow({
+  m,
+  dragEnabled,
+  assignees,
+  onAssign,
+}: {
+  m: Metric;
+  dragEnabled: boolean;
+  assignees: MetricAssignment[];
+  onAssign: () => void;
+}) {
+  const { setNodeRef, style, listeners, attributes } = useSortableItem(m.id);
+  const handle = dragEnabled ? <DragHandle listeners={listeners} attributes={attributes} /> : undefined;
+  const actions = (
+    <button onClick={onAssign} style={{ padding:"4px 10px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>
+      + Assign
+    </button>
+  );
+  return (
+    <div ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
+      <AssignmentRowBody m={m} assignees={assignees} dragHandle={handle} actions={actions} />
+    </div>
+  );
+}
+
+function AssignmentRowPreview({ m, assignees }: { m: Metric; assignees: MetricAssignment[] }) {
+  return (
+    <div style={overlayCardStyle}>
+      <AssignmentRowBody
+        m={m}
+        assignees={assignees}
+        dragHandle={<GripVertical size={14} style={{ color: "var(--text-muted)" }} />}
+      />
     </div>
   );
 }
