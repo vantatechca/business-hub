@@ -36,15 +36,10 @@ async function findUser(email: string) {
     const rows = await sql`SELECT id, email, name, password_hash, role, is_active, must_change_password, requires_checkin FROM users WHERE email = ${email} LIMIT 1`;
     if (rows.length) return toCamel<{ id: string; email: string; name: string; passwordHash: string; role: UserRole; isActive: boolean; mustChangePassword: boolean; requiresCheckin: boolean }>(rows[0] as Record<string,unknown>);
   } catch {}
-  // Demo fallback before DB is set up
-  const DEMO: Record<string, { id: string; name: string; role: UserRole; pw: string }> = {
-    "admin@hub.com":   { id: "demo-admin",   name: "Andrei",  role: "admin",   pw: "admin123"  },
-    "mathieu@hub.com": { id: "demo-manager", name: "Mathieu", role: "manager", pw: "leader123" },
-    "renold@hub.com":  { id: "demo-member",  name: "Renold",  role: "member",  pw: "member123" },
-  };
-  const d = DEMO[email];
-  if (!d) return null;
-  return { id: d.id, email, name: d.name, passwordHash: bcrypt.hashSync(d.pw, 10), role: d.role, isActive: true, mustChangePassword: false, requiresCheckin: d.role === "manager" };
+  // No demo fallback. The hard-coded admin@hub.com / admin123 etc. demo
+  // accounts were removed alongside the demo hint on the login page so
+  // there's no longer a "password the world knows" path into the app.
+  return null;
 }
 
 // Best-effort audit write from within NextAuth. Can't use lib/audit.ts here

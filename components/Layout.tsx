@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { signOut, useSession } from "next-auth/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { LayoutDashboard, TrendingUp, Layers, Users, CheckSquare, Calendar, DollarSign, CreditCard, Target, LogOut, Zap, Bell, Plus, Check, BarChart2, UserCog, Link2, Cake, FileText, X, Send, AlertTriangle, AlertCircle } from "lucide-react";
+import { LayoutDashboard, TrendingUp, Network, Users, ListChecks, CalendarCheck, DollarSign, CreditCard, Target, LogOut, Building2, Bell, Plus, Check, BarChart2, Shield, Workflow, Cake, History, X, Send, AlertTriangle, LifeBuoy } from "lucide-react";
 import { Avatar } from "./ui/shared";
 import { useCurrency } from "@/lib/CurrencyContext";
 import { CURRENCIES } from "@/lib/currency";
@@ -18,12 +18,12 @@ const NAV = [
     {id:"analytics",l:"Analytics",h:"/analytics",I:TrendingUp},
   ]},
   { s:"OPERATIONS", items:[
-    {id:"departments",l:"Departments",h:"/departments",I:Layers},
+    {id:"departments",l:"Departments",h:"/departments",I:Network},
     {id:"metrics",l:"Metrics",h:"/metrics",I:BarChart2},
-    {id:"assignments",l:"Assignments",h:"/assignments",I:Link2},
+    {id:"assignments",l:"Assignments",h:"/assignments",I:Workflow},
     {id:"team",l:"Team",h:"/team",I:Users},
-    {id:"tasks",l:"Tasks",h:"/tasks",I:CheckSquare},
-    {id:"checkin",l:"Check-Ins",h:"/checkin",I:Calendar},
+    {id:"tasks",l:"Tasks",h:"/tasks",I:ListChecks},
+    {id:"checkin",l:"Check-Ins",h:"/checkin",I:CalendarCheck},
     {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake},
   ]},
   { s:"FINANCE", items:[
@@ -32,11 +32,11 @@ const NAV = [
     {id:"goals",l:"Goals",h:"/goals",I:Target},
   ]},
   { s:"ADMIN", items:[
-    {id:"users",l:"Users",h:"/users",I:UserCog},
+    {id:"users",l:"Users",h:"/users",I:Shield},
   ]},
   // SYSTEM is super_admin only
   { s:"SYSTEM", items:[
-    {id:"audit",l:"Audit Log",h:"/audit",I:FileText},
+    {id:"audit",l:"Audit Log",h:"/audit",I:History},
   ]},
 ];
 
@@ -153,7 +153,7 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
 
         <aside style={{width:col?"var(--sidebar-collapsed)":"var(--sidebar-width)",background:"var(--bg-sidebar)",borderRight:"1px solid var(--border-sidebar)",display:"flex",flexDirection:"column",transition:"width .2s ease",flexShrink:0,overflow:"hidden"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,padding:"13px 12px",borderBottom:"1px solid var(--border-sidebar)",flexShrink:0,minHeight:56}}>
-            <div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:"linear-gradient(135deg,#5b8ef8,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center"}}><Zap size={15} color="#fff"/></div>
+            <div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:"linear-gradient(135deg,#5b8ef8,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center"}}><Building2 size={15} color="#fff"/></div>
             {!col&&<div><div style={{fontSize:13,fontWeight:800,color:"var(--text-primary)",whiteSpace:"nowrap",letterSpacing:"-0.02em"}}>Business Hub</div><div style={{fontSize:10,color:"var(--text-secondary)"}}>V2 · Command Center</div></div>}
           </div>
 
@@ -188,7 +188,7 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
               className={`nav-item ${pathname === "/issues" || pathname.startsWith("/issues/") ? "active" : ""} ${col?"justify-center":""}`}
               style={{fontSize:12,marginBottom:2}}
             >
-              <AlertCircle size={14}/>{!col && " Issues"}
+              <LifeBuoy size={14}/>{!col && " Issues"}
             </Link>
             {/* Clicking the user card opens the user's own profile page where
                 they can view + edit all their details. The whole row is the
