@@ -3,15 +3,23 @@ import { sql, rowsToCamel } from "@/lib/db";
 
 export async function GET() {
   try {
+    // Counts come from separate scalar subqueries so a type mismatch on any
+    // one FK won't fail the whole row (e.g. a task.department_id that's
+    // TEXT while users.department_id is UUID still returns valid numbers
+    // for the joinable tables).
     const rows = await sql`
-      SELECT d.*, COUNT(DISTINCT m.id)::int AS metric_count, COUNT(DISTINCT ma.user_id)::int AS member_count
+      SELECT d.*,
+        (SELECT COUNT(*)::int FROM metrics m WHERE m.department_id::text = d.id::text) AS metric_count,
+        (SELECT COUNT(*)::int FROM users u WHERE u.department_id::text = d.id::text AND u.is_active = TRUE) AS member_count,
+        (SELECT COUNT(*)::int FROM tasks t WHERE t.department_id::text = d.id::text) AS task_count
       FROM departments d
-      LEFT JOIN metrics m ON m.department_id = d.id
-      LEFT JOIN metric_assignments ma ON ma.metric_id = m.id
-      GROUP BY d.id ORDER BY d.sort_order ASC, d.priority_score DESC
+      ORDER BY d.sort_order ASC, d.priority_score DESC
     `;
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
-  } catch { return NextResponse.json({ error: "DB not configured" }, { status: 503 }); }
+  } catch (e) {
+    console.error("[departments/GET] error:", e);
+    return NextResponse.json({ error: "DB not configured" }, { status: 503 });
+  }
 }
 
 export async function POST(req: NextRequest) {
