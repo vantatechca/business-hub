@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, toCamel } from "@/lib/db";
-import { getSessionUser, canSeeSuperAdmin, isAdmin } from "@/lib/authz";
+import { getSessionUser, canSeeSuperAdmin, isAdmin, isManagerOrHigher } from "@/lib/authz";
 import { logAudit } from "@/lib/audit";
 
 // Super admin stealth: non-SA callers that try to touch an SA record get a
@@ -12,15 +12,33 @@ async function denyIfSuperAdmin(targetId: string, viewerRole: string | undefined
   return rows[0].role === "super_admin";
 }
 
-// PATCH /api/team/[id] — update a team member. This is just a user update
-// scoped to the fields the Team page cares about.
+// PATCH /api/team/[id] — update a team member. Permission tier depends on
+// what's being changed:
+//   * checkedInToday only         → manager / admin / super_admin (the
+//                                   "Mark In" button on the Team page)
+//   * any other field             → admin / super_admin
+// Anyone else gets 403 regardless of which fields are present.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const me = await getSessionUser();
-  if (!isAdmin(me?.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const b = await req.json();
+
+  // Two permission tiers based on the body. The "Mark In" button only sends
+  // { checkedInToday: ... }, so a manager hitting it should succeed even
+  // though they can't edit / rename / change role on the same row.
+  const fields = Object.keys(b);
+  const isOnlyCheckIn = fields.length > 0 && fields.every(k => k === "checkedInToday");
+  if (isOnlyCheckIn) {
+    if (!isManagerOrHigher(me?.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  } else {
+    if (!isAdmin(me?.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
   if (await denyIfSuperAdmin(params.id, me?.role)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const b = await req.json();
   try {
     if (b.name         !== undefined) await sql`UPDATE users SET name = ${b.name}, updated_at = NOW() WHERE id = ${params.id}`;
     if (b.email        !== undefined) await sql`UPDATE users SET email = ${b.email}, updated_at = NOW() WHERE id = ${params.id}`;

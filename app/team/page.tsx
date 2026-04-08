@@ -63,6 +63,10 @@ export default function TeamPage() {
   const myId = (session?.user as { id?: string })?.id;
   const isAdmin = myRole === "admin" || myRole === "super_admin";
   const isSuperAdmin = myRole === "super_admin";
+  // "Mark In" toggles a teammate's daily check-in. Manager / admin / super
+  // admin can flip it; lead and member can't (the button is hidden + the
+  // API enforces the same rule).
+  const canMarkIn = myRole === "manager" || isAdmin;
   // Profile drawer opens for anyone above lead. Lead still gets a click that
   // shows a minimal read-only card (the drawer handles the minimal branch).
   const canOpenProfileDrawer = myRole !== "member";
@@ -321,7 +325,7 @@ export default function TeamPage() {
         <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="hub-table">
             <thead>
-              <tr>{["Member", "Job Title", "Role", "Departments", "Status", "Check-In", ""].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>{(canMarkIn ? ["Member", "Job Title", "Role", "Departments", "Status", "Check-In", ""] : ["Member", "Job Title", "Role", "Departments", "Status", ""]).map(h => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map(m => (
@@ -366,14 +370,16 @@ export default function TeamPage() {
                       <span style={{ fontSize: 11, color: SCOL[m.status], fontWeight: 600, textTransform: "capitalize" }}>{m.status}</span>
                     </div>
                   </td>
-                  <td onClick={e => e.stopPropagation()}>
-                    <button
-                      onClick={() => toggleCI(m)}
-                      style={{ padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, background: m.checkedInToday ? "var(--success-bg)" : "var(--bg-input)", color: m.checkedInToday ? "var(--success)" : "var(--text-secondary)" }}
-                    >
-                      {m.checkedInToday ? "✓ Done" : "Mark In"}
-                    </button>
-                  </td>
+                  {canMarkIn && (
+                    <td onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => toggleCI(m)}
+                        style={{ padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, background: m.checkedInToday ? "var(--success-bg)" : "var(--bg-input)", color: m.checkedInToday ? "var(--success)" : "var(--text-secondary)" }}
+                      >
+                        {m.checkedInToday ? "✓ Done" : "Mark In"}
+                      </button>
+                    </td>
+                  )}
                   <td onClick={e => e.stopPropagation()}>
                     {isAdmin && (
                       <div style={{ display: "flex", gap: 5 }}>
