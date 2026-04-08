@@ -17,10 +17,25 @@ export default function CheckInGate({ children }: CheckInGateProps) {
   const [ready,       setReady]       = useState(false);
 
   const userId = (session?.user as { id?: string })?.id;
+  const role   = (session?.user as { role?: string })?.role;
+  const requiresCheckin = (session?.user as { requiresCheckin?: boolean })?.requiresCheckin;
   const today  = new Date().toISOString().slice(0, 10);
+
+  // Roles that NEVER get the check-in prompt regardless of the per-user
+  // requires_checkin flag. Admins / super admins are excluded by design —
+  // they're not the ones doing daily reports.
+  const exemptRole = role === "super_admin" || role === "admin";
+  // For everyone else, the prompt only fires if requires_checkin is true
+  // on their user row. (Manager defaults to true; member/lead default to
+  // false unless an admin flips it.)
+  const shouldGate = !exemptRole && requiresCheckin === true;
 
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
+    if (!shouldGate) {
+      setReady(true);
+      return;
+    }
 
     const doneKey   = DONE_KEY(userId, today);
     const deferKey  = DEFER_KEY(userId, today);
@@ -52,7 +67,7 @@ export default function CheckInGate({ children }: CheckInGateProps) {
         setReady(true);
         setShowModal(true);
       });
-  }, [status, userId, today]);
+  }, [status, userId, today, shouldGate]);
 
   const handleDefer = () => {
     if (!userId) return;

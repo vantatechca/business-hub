@@ -1,14 +1,16 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { signOut, useSession } from "next-auth/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { LayoutDashboard, TrendingUp, Layers, Users, CheckSquare, Calendar, DollarSign, CreditCard, Target, LogOut, Zap, Bell, Search, Plus, Check, BarChart2, UserCog, Link2, Cake, User as UserIcon, FileText } from "lucide-react";
+import { LayoutDashboard, TrendingUp, Layers, Users, CheckSquare, Calendar, DollarSign, CreditCard, Target, LogOut, Zap, Bell, Search, Plus, Check, BarChart2, UserCog, Link2, Cake, User as UserIcon, FileText, X, Send, AlertTriangle, AlertCircle } from "lucide-react";
 import { Avatar } from "./ui/shared";
 import { useCurrency } from "@/lib/CurrencyContext";
 import { CURRENCIES } from "@/lib/currency";
+import SendAlertModal from "./SendAlertModal";
+import ReportIssueModal from "./ReportIssueModal";
 
 const NAV = [
   { s:"MAIN", items:[
@@ -24,6 +26,7 @@ const NAV = [
     {id:"tasks",l:"Tasks",h:"/tasks",I:CheckSquare},
     {id:"checkin",l:"Check-Ins",h:"/checkin",I:Calendar},
     {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake},
+    {id:"issues",l:"Issues",h:"/issues",I:AlertCircle},
   ]},
   { s:"FINANCE", items:[
     {id:"revenue",l:"Revenue",h:"/revenue",I:DollarSign},
@@ -39,7 +42,17 @@ const NAV = [
   ]},
 ];
 
-interface Notif { id:number; type:string; message:string; read:boolean; createdAt:string; }
+interface Notif {
+  id: number | string;
+  type: string;
+  message: string;
+  body?: string;
+  read: boolean;
+  createdAt: string;
+  actionUrl?: string;
+  senderName?: string | null;
+  severity?: "info" | "warning" | "critical";
+}
 
 export default function AppLayout({ children, title, onNew, newLabel="New" }: { children:React.ReactNode; title:string; onNew?:()=>void; newLabel?:string; }) {
   const pathname = usePathname();
@@ -51,6 +64,9 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
   const [showCur, setShowCur] = useState(false);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [showIssueModal, setShowIssueModal] = useState(false);
+  const notifPanelRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMounted(true); }, []);
 
   const name  = session?.user?.name ?? "Admin";
@@ -58,12 +74,50 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
   const ini   = name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
   const unread = notifs.filter(n => !n.read).length;
   const isDark = mounted && theme === "dark";
+  // Anyone above member can broadcast alerts.
+  const canSendAlerts = role === "lead" || role === "manager" || role === "leader" || role === "admin" || role === "super_admin";
 
-  useEffect(() => {
-    fetch("/api/notifications").then(r => r.json()).then(d => setNotifs(d.data ?? [])).catch(() => {});
+  // Fetch notifications immediately on mount, then poll every 60 seconds
+  // while the tab is focused. We pause polling on hidden tabs to be nice
+  // to the DB.
+  const fetchNotifs = useCallback(() => {
+    fetch("/api/notifications")
+      .then(r => r.json())
+      .then(d => setNotifs(d.data ?? []))
+      .catch(() => {});
   }, []);
 
-  const markRead = (id: number) => {
+  useEffect(() => {
+    fetchNotifs();
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => {
+        if (typeof document !== "undefined" && document.visibilityState === "visible") {
+          fetchNotifs();
+        }
+      }, 60_000);
+    };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    start();
+    const onVis = () => { if (document.visibilityState === "visible") fetchNotifs(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+  }, [fetchNotifs]);
+
+  // Click-outside-to-close for the notification panel.
+  useEffect(() => {
+    if (!showN) return;
+    const onDown = (e: MouseEvent) => {
+      if (notifPanelRef.current && !notifPanelRef.current.contains(e.target as Node)) {
+        setShowN(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [showN]);
+
+  const markRead = (id: number | string) => {
     fetch(`/api/notifications/${id}`, { method:"PATCH" }).catch(() => {});
     setNotifs(p => p.map(n => n.id === id ? {...n,read:true} : n));
   };
@@ -71,6 +125,20 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
     fetch("/api/notifications", { method:"PATCH" }).catch(() => {});
     setNotifs(p => p.map(n => ({...n,read:true})));
   };
+  const dismiss = (id: number | string) => {
+    fetch(`/api/notifications/${id}`, { method:"DELETE" }).catch(() => {});
+    setNotifs(p => p.filter(n => n.id !== id));
+  };
+
+  // Severity → color for the row + bell. critical wins over warning wins
+  // over info.
+  const severityColor = (s?: string) => {
+    if (s === "critical") return "var(--danger)";
+    if (s === "warning")  return "var(--warning)";
+    return "var(--accent)";
+  };
+  const hasCritical = notifs.some(n => !n.read && n.severity === "critical");
+  const bellColor = unread === 0 ? "var(--text-secondary)" : (hasCritical ? "var(--danger)" : "var(--warning)");
 
   const ROLE_COLOR: Record<string,string> = {
     super_admin: "var(--danger)",
@@ -190,24 +258,96 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
                 </div>
               )}
             </div>
-            <div style={{position:"relative"}}>
-              <button onClick={()=>setShowN(v=>!v)} aria-label="Notifications" style={{width:34,height:34,borderRadius:"var(--radius-md)",border:"1px solid var(--border-card)",background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"var(--text-secondary)",position:"relative"}}>
-                <Bell size={15}/>{unread>0&&<div className="notif-dot"/>}
+            <div ref={notifPanelRef} style={{position:"relative"}}>
+              <button
+                onClick={()=>setShowN(v=>!v)}
+                aria-label="Notifications"
+                className={unread > 0 ? "bell-active" : ""}
+                style={{
+                  width:34, height:34, borderRadius:"var(--radius-md)",
+                  border:"1px solid var(--border-card)",
+                  background:"transparent",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  cursor:"pointer",
+                  color: bellColor,
+                  position:"relative",
+                  transition: "color .2s ease",
+                }}
+              >
+                <Bell size={15}/>
+                {unread > 0 && (
+                  <span style={{
+                    position: "absolute",
+                    top: -4, right: -4,
+                    minWidth: 16, height: 16,
+                    borderRadius: 8,
+                    background: hasCritical ? "var(--danger)" : "var(--warning)",
+                    color: "#fff",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "0 4px",
+                    border: "2px solid var(--bg-sidebar)",
+                  }}>{unread > 99 ? "99+" : unread}</span>
+                )}
               </button>
               {showN&&(
-                <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",width:300,background:"var(--bg-card)",border:"1px solid var(--border-card)",borderRadius:"var(--radius-xl)",boxShadow:"var(--shadow-dropdown)",zIndex:300}} className="animate-slide-up">
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",borderBottom:"1px solid var(--border-divider)"}}>
-                    <span style={{fontSize:13,fontWeight:700,color:"var(--text-primary)"}}>Notifications{unread>0&&` (${unread})`}</span>
+                <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",width:340,background:"var(--bg-card)",border:"1px solid var(--border-card)",borderRadius:"var(--radius-xl)",boxShadow:"var(--shadow-dropdown)",zIndex:300}} className="animate-slide-up">
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",borderBottom:"1px solid var(--border-divider)",gap:6}}>
+                    <span style={{fontSize:13,fontWeight:700,color:"var(--text-primary)",flex:1}}>Notifications{unread>0&&` (${unread})`}</span>
                     {unread>0&&<button onClick={markAll} style={{fontSize:11,color:"var(--accent)",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><Check size={11}/>Mark all read</button>}
+                    <button onClick={() => setShowN(false)} aria-label="Close notifications" style={{background:"transparent",border:"none",color:"var(--text-secondary)",cursor:"pointer",display:"flex",padding:2}}><X size={14}/></button>
                   </div>
-                  <div style={{maxHeight:320,overflowY:"auto"}}>
+                  {/* Action row — Send Alert (admins/managers/leads), Report Issue (everyone) */}
+                  <div style={{display:"flex",gap:6,padding:"9px 14px",borderBottom:"1px solid var(--border-divider)"}}>
+                    {canSendAlerts && (
+                      <button
+                        onClick={() => { setShowAlertModal(true); setShowN(false); }}
+                        style={{flex:1,padding:"7px 10px",borderRadius:7,background:"var(--accent-bg)",color:"var(--accent)",border:"1px solid var(--accent)33",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,justifyContent:"center"}}
+                      >
+                        <Send size={11}/>Send Alert
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setShowIssueModal(true); setShowN(false); }}
+                      style={{flex:1,padding:"7px 10px",borderRadius:7,background:"var(--warning-bg)",color:"var(--warning)",border:"1px solid var(--warning)33",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,justifyContent:"center"}}
+                    >
+                      <AlertTriangle size={11}/>Report Issue
+                    </button>
+                  </div>
+                  <div style={{maxHeight:380,overflowY:"auto"}}>
                     {notifs.length===0?<div style={{padding:"28px 0",textAlign:"center",fontSize:13,color:"var(--text-secondary)"}}>All caught up!</div>:
-                      notifs.map(n=>(
-                        <div key={n.id} onClick={()=>markRead(n.id)} role="button" style={{padding:"9px 14px",borderBottom:"1px solid var(--border-divider)",background:n.read?"transparent":"var(--accent-bg)",display:"flex",gap:9,alignItems:"flex-start",cursor:"pointer"}}>
-                          <div style={{width:7,height:7,borderRadius:"50%",marginTop:5,flexShrink:0,background:n.read?"var(--text-muted)":"var(--accent)"}}/>
-                          <div><div style={{fontSize:12,color:"var(--text-primary)",lineHeight:1.4}}>{n.message}</div><div style={{fontSize:10,color:"var(--text-secondary)",marginTop:2}}>{new Date(n.createdAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}</div></div>
+                      notifs.map(n=>{
+                        const sevColor = severityColor(n.severity);
+                        return (
+                        <div key={n.id} role="button" style={{padding:"10px 14px",borderBottom:"1px solid var(--border-divider)",background:n.read?"transparent":"var(--bg-card-hover)",display:"flex",gap:9,alignItems:"flex-start",position:"relative"}}>
+                          <div style={{width:7,height:7,borderRadius:"50%",marginTop:6,flexShrink:0,background:n.read?"var(--text-muted)":sevColor}}/>
+                          <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{markRead(n.id); if(n.actionUrl){window.location.href=n.actionUrl;}}}>
+                            {n.type === "alert" && (
+                              <div style={{fontSize:9,fontWeight:800,letterSpacing:".06em",textTransform:"uppercase",color:sevColor,marginBottom:3}}>
+                                ALERT{n.senderName ? ` · from ${n.senderName}` : ""}
+                              </div>
+                            )}
+                            {n.type === "issue_update" && (
+                              <div style={{fontSize:9,fontWeight:800,letterSpacing:".06em",textTransform:"uppercase",color:"var(--success)",marginBottom:3}}>
+                                ISSUE UPDATE
+                              </div>
+                            )}
+                            <div style={{fontSize:12,color:"var(--text-primary)",lineHeight:1.4,fontWeight:n.read?500:700}}>{n.message}</div>
+                            {n.body && <div style={{fontSize:11,color:"var(--text-secondary)",marginTop:3,lineHeight:1.4,whiteSpace:"pre-wrap"}}>{n.body}</div>}
+                            <div style={{fontSize:10,color:"var(--text-muted)",marginTop:3}}>{new Date(n.createdAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); dismiss(n.id); }}
+                            aria-label="Dismiss"
+                            style={{background:"transparent",border:"none",color:"var(--text-muted)",cursor:"pointer",display:"flex",padding:2,marginTop:2}}
+                          >
+                            <X size={12}/>
+                          </button>
                         </div>
-                      ))
+                      );})
                     }
                   </div>
                 </div>
@@ -218,6 +358,12 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
           <main style={{flex:1,overflowY:"auto",padding:"16px 18px"}} className="animate-fade-in">{children}</main>
         </div>
       </div>
+
+      {/* Modals — mounted at the layout level so they're available from
+          every page. The Send Alert modal is gated by role inside the
+          notification panel header; here we just need to host it. */}
+      <SendAlertModal open={showAlertModal} onClose={() => setShowAlertModal(false)} onSent={fetchNotifs} />
+      <ReportIssueModal open={showIssueModal} onClose={() => setShowIssueModal(false)} onCreated={fetchNotifs} />
     </Tooltip.Provider>
   );
 }

@@ -18,7 +18,7 @@ const SCOL: Record<string, string> = {
   lead:        "var(--accent)",
   member:      "var(--accent)",
 };
-const blank = { name:"", email:"", role:"member" as FormRole, timezone:"America/Toronto", password:"member123", birthday:"" as string };
+const blank = { name:"", email:"", role:"member" as FormRole, timezone:"America/Toronto", password:"member123", birthday:"" as string, requiresCheckin: false, birthdayNotifications: false };
 
 export default function UsersPage() {
   const { data: session } = useSession();
@@ -69,7 +69,14 @@ export default function UsersPage() {
     const res = await fetch(`/api/users/${editing.id}`, {
       method:"PATCH",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ name:form.name, role:form.role, timezone:form.timezone, birthday: form.birthday || null }),
+      body:JSON.stringify({
+        name: form.name,
+        role: form.role,
+        timezone: form.timezone,
+        birthday: form.birthday || null,
+        requiresCheckin: form.requiresCheckin,
+        birthdayNotifications: form.birthdayNotifications,
+      }),
     });
     if (!res.ok) return toast("Update failed", "er");
     await load(); setEditing(null); toast("User updated");
@@ -114,6 +121,8 @@ export default function UsersPage() {
       timezone: u.timezone ?? "America/Toronto",
       password: "",
       birthday: ((u as unknown as { birthday?: string | null }).birthday) ?? "",
+      requiresCheckin: !!u.requiresCheckin,
+      birthdayNotifications: !!u.birthdayNotifications,
     });
   };
 
@@ -141,9 +150,33 @@ export default function UsersPage() {
         />
       </FormField>
       {!editing && <FormField label="Initial Password"><HubInput value={form.password} onChange={e => setForm(p => ({...p, password:e.target.value}))} placeholder="member123"/></FormField>}
+
+      {/* Per-user preference toggles for admins. Lets you flip a manager's
+          birthday notifications off without going to the profile drawer. */}
+      {isAdmin && (
+        <div style={{ padding: "12px 14px", borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border-card)", marginBottom: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".07em", marginBottom: 9 }}>PREFERENCES</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: "var(--text-primary)", marginBottom: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.requiresCheckin}
+              onChange={e => setForm(p => ({ ...p, requiresCheckin: e.target.checked }))}
+            />
+            Requires daily check-in
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: "var(--text-primary)", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.birthdayNotifications}
+              onChange={e => setForm(p => ({ ...p, birthdayNotifications: e.target.checked }))}
+            />
+            Send birthday notifications when this person's birthday comes up
+          </label>
+        </div>
+      )}
       {form.role === "manager" && !editing && (
         <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent)30", fontSize: 11, color: "var(--accent)" }}>
-          Managers default to requiring daily check-ins and receiving birthday notifications. Toggle per-user in the profile drawer.
+          Managers default to requiring daily check-ins and receiving birthday notifications. You can override above before saving.
         </div>
       )}
     </div>

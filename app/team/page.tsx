@@ -50,6 +50,8 @@ const blank = {
   departmentIds: [] as string[],
   status: "active" as string,
   birthday: "" as string,
+  requiresCheckin: false,
+  birthdayNotifications: false,
 };
 
 export default function TeamPage() {
@@ -113,6 +115,8 @@ export default function TeamPage() {
       departmentIds: (m.departments ?? []).map(d => String(d.id)),
       status: m.status,
       birthday: m.birthday ?? "",
+      requiresCheckin: !!m.requiresCheckin,
+      birthdayNotifications: !!m.birthdayNotifications,
     });
   };
 
@@ -129,6 +133,8 @@ export default function TeamPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
+        requiresCheckin: form.requiresCheckin,
+        birthdayNotifications: form.birthdayNotifications,
         // Backwards-compat: also send a primary departmentId for any code
         // path that hasn't moved to multi-dept yet.
         departmentId: form.departmentIds[0] ?? null,
@@ -156,6 +162,8 @@ export default function TeamPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
+        requiresCheckin: form.requiresCheckin,
+        birthdayNotifications: form.birthdayNotifications,
         departmentIds: form.departmentIds,
         departmentId: form.departmentIds[0] ?? null,
       }),
@@ -222,9 +230,36 @@ export default function TeamPage() {
       <FormField label="Birthday (optional)">
         <HubInput type="date" value={form.birthday} onChange={e => setForm(p => ({ ...p, birthday: e.target.value }))} />
       </FormField>
+
+      {/* Per-user preference toggles. Admin / super_admin can flip these
+          for any user, including managers (so an admin can opt a specific
+          manager OUT of birthday notifications even though manager is the
+          default-on role). */}
+      {isAdmin && (
+        <div style={{ padding: "12px 14px", borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border-card)", marginBottom: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".07em", marginBottom: 9 }}>PREFERENCES</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: "var(--text-primary)", marginBottom: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.requiresCheckin}
+              onChange={e => setForm(p => ({ ...p, requiresCheckin: e.target.checked }))}
+            />
+            Requires daily check-in
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: "var(--text-primary)", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.birthdayNotifications}
+              onChange={e => setForm(p => ({ ...p, birthdayNotifications: e.target.checked }))}
+            />
+            Send birthday notifications when this person's birthday comes up
+          </label>
+        </div>
+      )}
+
       {form.role === "manager" && !editing && (
         <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent)30", fontSize: 11, color: "var(--accent)", marginBottom: 4 }}>
-          Managers are set to require daily check-ins and receive birthday notifications by default. You can toggle these per-user after creation.
+          Managers are set to require daily check-ins and receive birthday notifications by default. You can toggle these above before saving, or per-user later.
         </div>
       )}
     </div>

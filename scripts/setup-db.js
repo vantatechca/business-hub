@@ -226,6 +226,43 @@ async function runAdditiveMigrations() {
     `ALTER TABLE daily_checkins ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`,
     `ALTER TABLE daily_checkins ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
 
+    // ── Notifications: alerts/issues integration
+    // The notifications table is repurposed for admin-sent alerts (one row
+    // per recipient). Existing rows are unaffected; we just add a few
+    // columns and widen the type CHECK.
+    `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS sender_id UUID REFERENCES users(id) ON DELETE SET NULL`,
+    `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS severity VARCHAR(20) DEFAULT 'info'`,
+    `ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_severity_check`,
+    `ALTER TABLE notifications ADD CONSTRAINT notifications_severity_check CHECK (severity IN ('info','warning','critical'))`,
+    `ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check`,
+    `ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('checkin_reminder','missed_checkin','metric_alert','ai_flag','stalled_metric','priority_change','weekly_summary','api_sync_error','system','alert','issue_update','birthday'))`,
+
+    // ── Issues
+    // Two categories:
+    //   system → only admin / super_admin can see/resolve
+    //   work   → admin / manager / lead / super_admin can see/resolve
+    // Reporter always sees their own issues regardless of category.
+    `CREATE TABLE IF NOT EXISTS issues (
+      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      reporter_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category         VARCHAR(20) NOT NULL CHECK (category IN ('system','work')),
+      title            TEXT NOT NULL,
+      description      TEXT,
+      status           VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','resolved')),
+      assignee_id      UUID REFERENCES users(id) ON DELETE SET NULL,
+      resolver_id      UUID REFERENCES users(id) ON DELETE SET NULL,
+      resolution_notes TEXT,
+      archived         BOOLEAN DEFAULT FALSE,
+      created_at       TIMESTAMPTZ DEFAULT NOW(),
+      resolved_at      TIMESTAMPTZ,
+      archived_at      TIMESTAMPTZ
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_issues_reporter ON issues(reporter_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_issues_assignee ON issues(assignee_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status)`,
+    `CREATE INDEX IF NOT EXISTS idx_issues_category ON issues(category)`,
+    `CREATE INDEX IF NOT EXISTS idx_issues_archived ON issues(archived)`,
+
     // Metrics — optional due date. When set, notifications (separate feature)
     // ping assignees at T-7d / T-3d / T-0 until the metric is marked complete.
     `ALTER TABLE metrics ADD COLUMN IF NOT EXISTS due_date DATE`,

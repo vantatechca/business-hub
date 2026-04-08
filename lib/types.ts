@@ -12,7 +12,10 @@ export type MetricType = "value" | "daily" | "value_and_daily";
 export type MetricDirection = "higher_better" | "lower_better";
 export type AssignmentRole = "owner" | "contributor" | "reviewer";
 export type CheckInStatus = "pending" | "submitted" | "ai_processed" | "reviewed";
-export type NotifType = "checkin_reminder" | "missed_checkin" | "metric_alert" | "ai_flag" | "stalled_metric" | "priority_change" | "weekly_summary" | "api_sync_error" | "system";
+export type NotifType = "checkin_reminder" | "missed_checkin" | "metric_alert" | "ai_flag" | "stalled_metric" | "priority_change" | "weekly_summary" | "api_sync_error" | "system" | "alert" | "issue_update" | "birthday";
+export type AlertSeverity = "info" | "warning" | "critical";
+export type IssueCategory = "system" | "work";
+export type IssueStatus = "open" | "in_progress" | "resolved";
 export type UpdateSource = "checkin" | "manual" | "api_sync" | "sheets_import";
 
 export interface User {
@@ -113,6 +116,28 @@ export interface MetricUpdate {
 export interface Notification {
   id: string; userId?: string; type: NotifType; title: string;
   body?: string; isRead: boolean; actionUrl?: string; createdAt: string;
+  senderId?: string | null;
+  senderName?: string | null;
+  severity?: AlertSeverity;
+}
+
+export interface Issue {
+  id: string;
+  reporterId: string;
+  reporterName?: string;
+  category: IssueCategory;
+  title: string;
+  description?: string | null;
+  status: IssueStatus;
+  assigneeId?: string | null;
+  assigneeName?: string | null;
+  resolverId?: string | null;
+  resolverName?: string | null;
+  resolutionNotes?: string | null;
+  archived: boolean;
+  createdAt: string;
+  resolvedAt?: string | null;
+  archivedAt?: string | null;
 }
 
 export interface DailyPrompt {
