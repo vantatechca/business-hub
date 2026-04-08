@@ -263,6 +263,25 @@ async function runAdditiveMigrations() {
     `CREATE INDEX IF NOT EXISTS idx_issues_category ON issues(category)`,
     `CREATE INDEX IF NOT EXISTS idx_issues_archived ON issues(archived)`,
 
+    // ── Hard-delete user safety
+    // The original schema declared several FK columns to users(id) WITHOUT
+    // an ON DELETE clause, which defaults to NO ACTION and blocks deletion.
+    // We now hard-delete users instead of soft-deactivating, so re-create
+    // the constraints with ON DELETE SET NULL (or CASCADE for tightly coupled
+    // rows) so historical data stays put while the user row goes away.
+    `ALTER TABLE metric_assignments DROP CONSTRAINT IF EXISTS metric_assignments_assigned_by_fkey`,
+    `ALTER TABLE metric_assignments ADD CONSTRAINT metric_assignments_assigned_by_fkey
+       FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL`,
+    `ALTER TABLE daily_checkins DROP CONSTRAINT IF EXISTS daily_checkins_reviewed_by_fkey`,
+    `ALTER TABLE daily_checkins ADD CONSTRAINT daily_checkins_reviewed_by_fkey
+       FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL`,
+    `ALTER TABLE metric_updates DROP CONSTRAINT IF EXISTS metric_updates_user_id_fkey`,
+    `ALTER TABLE metric_updates ADD CONSTRAINT metric_updates_user_id_fkey
+       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL`,
+    `ALTER TABLE login_messages DROP CONSTRAINT IF EXISTS login_messages_from_user_id_fkey`,
+    `ALTER TABLE login_messages ADD CONSTRAINT login_messages_from_user_id_fkey
+       FOREIGN KEY (from_user_id) REFERENCES users(id) ON DELETE CASCADE`,
+
     // Metrics — optional due date. When set, notifications (separate feature)
     // ping assignees at T-7d / T-3d / T-0 until the metric is marked complete.
     `ALTER TABLE metrics ADD COLUMN IF NOT EXISTS due_date DATE`,

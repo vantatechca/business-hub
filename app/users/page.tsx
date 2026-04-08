@@ -7,8 +7,11 @@ import ProfileDrawer from "@/components/ProfileDrawer";
 import type { User, UserRole } from "@/lib/types";
 import { getInitials } from "@/lib/types";
 
-type FormRole = Exclude<UserRole, "super_admin" | "leader">;
-const ROLES: FormRole[] = ["admin", "manager", "lead", "member"];
+// Roles selectable in the form. super_admin is appended ONLY for super_admin
+// viewers (see ROLES const inside the component). "leader" is the deprecated
+// alias and never appears in the dropdown.
+type FormRole = Exclude<UserRole, "leader">;
+const BASE_ROLES: Exclude<FormRole, "super_admin">[] = ["admin", "manager", "lead", "member"];
 const TZONES = ["America/Toronto","America/New_York","America/Chicago","America/Los_Angeles","Europe/Paris","Asia/Manila"];
 const SCOL: Record<string, string> = {
   super_admin: "var(--danger)",
@@ -23,7 +26,14 @@ const blank = { name:"", email:"", role:"member" as FormRole, timezone:"America/
 export default function UsersPage() {
   const { data: session } = useSession();
   const myRole = (session?.user as { role?: string })?.role ?? "member";
+  const myId = (session?.user as { id?: string })?.id;
   const isAdmin = myRole === "admin" || myRole === "super_admin";
+  const isSuperAdmin = myRole === "super_admin";
+  // Super admin viewers see super_admin as an additional role option, so they
+  // can promote/demote other accounts. Everyone else only sees the base roles.
+  const ROLES: FormRole[] = isSuperAdmin
+    ? ["super_admin", ...BASE_ROLES]
+    : [...BASE_ROLES];
   const [users, setUsers]     = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ]             = useState("");
@@ -66,6 +76,16 @@ export default function UsersPage() {
 
   const update = async () => {
     if (!editing) return;
+    // Refuse self-role-change without a confirm. Otherwise it's too easy for
+    // a super admin (or admin) to nuke their own access by accident — which
+    // is the exact bug the user hit before this fix.
+    const isEditingSelf = editing.id === myId;
+    if (isEditingSelf && editing.role !== form.role) {
+      const ok = window.confirm(
+        `You are about to change YOUR OWN role from "${editing.role}" to "${form.role}". This may lock you out of admin features. Continue?`
+      );
+      if (!ok) return;
+    }
     const res = await fetch(`/api/users/${editing.id}`, {
       method:"PATCH",
       headers:{"Content-Type":"application/json"},
@@ -84,8 +104,12 @@ export default function UsersPage() {
 
   const deactivate = async () => {
     if (!deleting) return;
-    await fetch(`/api/users/${deleting.id}`, { method:"DELETE" });
-    await load(); toast("User deactivated", "wa");
+    const res = await fetch(`/api/users/${deleting.id}`, { method:"DELETE" });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      return toast(e.error || "Delete failed", "er");
+    }
+    await load(); toast("User deleted", "wa");
   };
 
   // Admin-only: regenerate a temp password for the selected user.
@@ -109,11 +133,20 @@ export default function UsersPage() {
 
   const openEdit = (u: User) => {
     setEditing(u);
-    // Map super_admin / leader down to a valid form role. Admin/SA can still
-    // see their own super_admin row if they're the SA (stealth allows it).
-    const role: FormRole =
-      u.role === "super_admin" || u.role === "leader" ? "manager"
-      : (u.role as FormRole);
+    // Preserve the user's role in the form. Two important rules:
+    //   1. "leader" (deprecated alias) maps to "manager".
+    //   2. "super_admin" is preserved AS-IS for super_admin viewers — for
+    //      everyone else the form falls back to "admin" so they can't see
+    //      or unintentionally clobber the SA role.
+    //
+    // The previous version always mapped super_admin → "manager" which
+    // silently demoted any super_admin whose row was opened in the editor.
+    // That was the source of the "I edited my profile and lost my super
+    // admin power" bug.
+    let role: FormRole;
+    if (u.role === "leader") role = "manager";
+    else if (u.role === "super_admin") role = isSuperAdmin ? "super_admin" : "admin";
+    else role = u.role as FormRole;
     setForm({
       name: u.name,
       email: u.email,
@@ -133,7 +166,7 @@ export default function UsersPage() {
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11 }}>
         <FormField label="Role">
           <HubSelect value={form.role} onChange={e => setForm(p => ({...p, role:e.target.value as FormRole}))}>
-            {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase()+r.slice(1)}</option>)}
+            {ROLES.map(r => <option key={r} value={r}>{r === "super_admin" ? "Super Admin" : r.charAt(0).toUpperCase()+r.slice(1)}</option>)}
           </HubSelect>
         </FormField>
         <FormField label="Timezone">
@@ -217,7 +250,7 @@ export default function UsersPage() {
         </div>
         <select value={rf} onChange={e => setRf(e.target.value)} style={{ background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px", color:"var(--text-primary)", fontSize:12, outline:"none" }}>
           <option value="">All Roles</option>
-          {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase()+r.slice(1)}</option>)}
+          {ROLES.map(r => <option key={r} value={r}>{r === "super_admin" ? "Super Admin" : r.charAt(0).toUpperCase()+r.slice(1)}</option>)}
         </select>
         <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{rows.length} users</span>
       </div>
@@ -230,7 +263,7 @@ export default function UsersPage() {
       ) : (
         <div className="hub-card" style={{ padding:0, overflow:"hidden" }}>
           <table className="hub-table">
-            <thead><tr>{["User","Email","Role","Timezone","Last Login","Status",""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+            <thead><tr>{["User","Email","Role","Timezone","Last Login",""].map(h => <th key={h}>{h}</th>)}</tr></thead>
             <tbody>
               {rows.map(u => (
                 <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => setDrawerUserId(String(u.id))}>
@@ -242,23 +275,18 @@ export default function UsersPage() {
                   </td>
                   <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{u.email}</td>
                   <td>
-                    <span style={{ padding:"2px 9px", borderRadius:6, fontSize:11, fontWeight:700, background:`${SCOL[u.role]}22`, color:SCOL[u.role], textTransform:"capitalize" }}>{u.role.replace("_", " ")}</span>
+                    <span style={{ padding:"2px 9px", borderRadius:6, fontSize:11, fontWeight:700, background:`${SCOL[u.role]}22`, color:SCOL[u.role], textTransform:"capitalize" }}>{u.role === "super_admin" ? "Super Admin" : u.role.replace("_", " ")}</span>
                   </td>
                   <td style={{ fontSize:11, color:"var(--text-secondary)" }}>{u.timezone ?? "—"}</td>
                   <td style={{ fontSize:11, color:"var(--text-secondary)" }}>
                     {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : "Never"}
-                  </td>
-                  <td>
-                    <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:6, background: u.isActive ? "var(--success-bg)" : "var(--danger-bg)", color: u.isActive ? "var(--success)" : "var(--danger)" }}>
-                      {u.isActive ? "Active" : "Inactive"}
-                    </span>
                   </td>
                   <td onClick={e => e.stopPropagation()}>
                     {isAdmin && (
                       <div style={{ display:"flex", gap:5 }}>
                         <button onClick={() => openEdit(u)} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
                         <button onClick={() => setResetting(u)} title="Reset password" style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>🔑</button>
-                        {u.isActive && <button onClick={() => setDeleting(u)} style={{ padding:"4px 7px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>}
+                        <button onClick={() => setDeleting(u)} style={{ padding:"4px 7px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
                       </div>
                     )}
                   </td>
@@ -319,7 +347,7 @@ export default function UsersPage() {
         </div>
       </Modal>
 
-      <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={deactivate} name={deleting?.name ?? ""} entity="user (will be deactivated, not deleted)"/>
+      <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={deactivate} name={deleting?.name ?? ""} entity="user (this is permanent)"/>
 
       <ConfirmModal
         open={!!resetting}

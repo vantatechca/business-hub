@@ -185,13 +185,21 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
               <span style={{fontSize:14,lineHeight:1,width:14,display:"inline-block",textAlign:"center"}}>{isDark?"☀":"🌙"}</span>
               {!col&&<span>{isDark?" Light mode":" Dark mode"}</span>}
             </button>
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:col?"6px 0":"6px 10px",marginBottom:2}}>
+            {/* Clicking the user card opens the user's own profile page where
+                they can view + edit all their details. The whole row is the
+                hit target so it's discoverable. */}
+            <Link
+              href="/profile"
+              aria-label="Open my profile"
+              style={{display:"flex",alignItems:"center",gap:8,padding:col?"6px 0":"6px 10px",marginBottom:2,textDecoration:"none",borderRadius:"var(--radius-md)",transition:"background .15s ease"}}
+              className="nav-item"
+            >
               <Avatar s={ini} size={28}/>
-              {!col&&<div>
-                <div style={{fontSize:12,fontWeight:700,color:"var(--text-primary)"}}>{name}</div>
-                <div style={{fontSize:10,color:ROLE_COLOR[role] ?? "var(--text-secondary)",fontWeight:600,textTransform:"capitalize"}}>{role}</div>
+              {!col&&<div style={{minWidth:0,flex:1}}>
+                <div style={{fontSize:12,fontWeight:700,color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
+                <div style={{fontSize:10,color:ROLE_COLOR[role] ?? "var(--text-secondary)",fontWeight:600,textTransform:"capitalize"}}>{role === "super_admin" ? "Super Admin" : role}</div>
               </div>}
-            </div>
+            </Link>
             <button onClick={()=>signOut({callbackUrl:"/login"})} className={`nav-item ${col?"justify-center":""}`} style={{fontSize:12,marginTop:2}}><LogOut size={14}/>{!col&&" Sign out"}</button>
             <button onClick={()=>setCol(v=>!v)} className={`nav-item ${col?"justify-center":""}`} style={{fontSize:11,marginTop:2,color:"var(--text-muted)"}}>
               <span style={{fontSize:13}}>{col?"→":"←"}</span>{!col&&<span> Collapse</span>}

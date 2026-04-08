@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { curatedInspiration, toDateKey, pickEmoji, greetingForHour, type Inspiration } from "@/lib/dailyInspiration";
+import { curatedInspiration, slotKey, pickEmoji, greetingForHour, type Inspiration } from "@/lib/dailyInspiration";
 
 export const dynamic = "force-dynamic";
 
-// Per-server-process cache keyed by date so Claude is hit at most once per day
-// (or once per server cold-start, which in Render means once per deploy).
-let cached: { dateKey: string; data: Inspiration } | null = null;
+// Per-server-process cache keyed by 2-hour slot. The slot key is
+// "YYYY-MM-DD-sN" where N is 0..11, so a fresh quote (and a fresh Claude
+// call, if configured) is generated every 2 hours instead of once a day.
+let cached: { key: string; data: Inspiration } | null = null;
 
-async function claudeQuote(dateKey: string): Promise<{ quote: string; author: string } | null> {
+async function claudeQuote(key: string): Promise<{ quote: string; author: string } | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || apiKey.startsWith("sk-ant-your")) return null;
 
@@ -26,7 +27,7 @@ async function claudeQuote(dateKey: string): Promise<{ quote: string; author: st
         messages: [
           {
             role: "user",
-            content: `Give me today's (${dateKey}) motivational quote for the team dashboard.`,
+            content: `Give me a fresh motivational quote for the team dashboard (rotation key: ${key}).`,
           },
         ],
       }),
@@ -51,21 +52,21 @@ async function claudeQuote(dateKey: string): Promise<{ quote: string; author: st
 
 export async function GET() {
   const now = new Date();
-  const dateKey = toDateKey(now);
+  const key = slotKey(now);
 
-  // Serve cached version if it's still today.
-  if (cached && cached.dateKey === dateKey) {
-    // Greeting depends on the viewer's clock hour, which can cross noon since
-    // the cache was built. Recompute each request so "Good morning" flips to
-    // "Good afternoon" mid-session.
+  // Serve cached version if it's still the same 2-hour slot.
+  if (cached && cached.key === key) {
+    // Greeting depends on the viewer's clock hour and can cross noon mid
+    // session. Recompute it on each request so "Good morning" flips to
+    // "Good afternoon" without waiting for a cache miss.
     return NextResponse.json({
       data: { ...cached.data, greeting: greetingForHour(now.getHours()) },
     });
   }
 
   // Try Claude first; fall back to curated list if it fails or isn't configured.
-  const { emoji, label } = pickEmoji(dateKey);
-  const live = await claudeQuote(dateKey);
+  const { emoji, label } = pickEmoji(key);
+  const live = await claudeQuote(key);
   let data: Inspiration;
   if (live) {
     data = {
@@ -75,11 +76,11 @@ export async function GET() {
       quote: live.quote,
       author: live.author,
       source: "claude",
-      dateKey,
+      dateKey: key,
     };
   } else {
     data = curatedInspiration(now);
   }
-  cached = { dateKey, data };
+  cached = { key, data };
   return NextResponse.json({ data });
 }

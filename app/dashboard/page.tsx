@@ -61,15 +61,29 @@ export default function DashboardPage() {
     });
   },[]);
 
-  // Fetch today's inspiration separately so a slow Claude call doesn't block
-  // the rest of the dashboard from rendering.
+  // Fetch the inspiration separately so a slow Claude call doesn't block
+  // the rest of the dashboard from rendering. The hero rotates every 2
+  // hours, so we re-fetch on a 2-minute timer (cheap because the API caches
+  // the slot — most calls hit the in-memory cache and don't touch Claude)
+  // and also whenever the tab regains focus so a viewer coming back from a
+  // long break sees a fresh quote immediately.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/inspiration")
-      .then(r => r.json())
-      .then(d => { if (!cancelled && d?.data) setInspiration(d.data as Inspiration); })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const refresh = () => {
+      fetch("/api/inspiration")
+        .then(r => r.json())
+        .then(d => { if (!cancelled && d?.data) setInspiration(d.data as Inspiration); })
+        .catch(() => {});
+    };
+    refresh();
+    const timer = setInterval(refresh, 2 * 60 * 1000); // 2 minutes
+    const onVis = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   // Filter today's birthdays through the localStorage "greeted" state so
