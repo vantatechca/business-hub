@@ -299,20 +299,33 @@ function MetricRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { setNodeRef, style, listeners, attributes } = useSortableItem(m.id);
+  const { setNodeRef, style, listeners, attributes, isDragging } = useSortableItem(m.id);
   const pct = m.targetValue ? Math.min(100, Math.round((m.currentValue / m.targetValue) * 100)) : null;
   const { isGood, value: delta } = metricDelta(m);
   const pc = priorityColor(m.priorityScore);
   const stop = (e: React.MouseEvent) => e.stopPropagation();
+  const stopPointer = (e: React.PointerEvent) => e.stopPropagation();
+  // The whole row is draggable when reorder is enabled — we spread the
+  // listeners on the <tr> instead of attaching them only to a small grip
+  // button. dnd-kit's 5px activation distance keeps the click-to-view path
+  // working: a real click fires onView, a click + 5px drag starts a reorder.
   return (
     <tr
       ref={dragEnabled ? setNodeRef : undefined}
-      style={{ ...(dragEnabled ? style : {}), cursor: "pointer" }}
-      onClick={onView}
+      style={{
+        ...(dragEnabled ? style : {}),
+        cursor: dragEnabled ? "grab" : "pointer",
+        touchAction: dragEnabled ? "none" : undefined,
+      }}
+      onClick={() => { if (!isDragging) onView(); }}
+      {...(dragEnabled ? listeners : {})}
+      {...(dragEnabled ? attributes : {})}
     >
       {dragEnabled && (
-        <td style={{ width:26 }} onClick={stop}>
-          <DragHandle listeners={listeners} attributes={attributes} />
+        <td style={{ width: 26, color: "var(--text-muted)", opacity: 0.5 }} aria-hidden>
+          <span style={{ display: "inline-flex" }}>
+            <GripVertical size={14} />
+          </span>
         </td>
       )}
       <td>
@@ -350,7 +363,7 @@ function MetricRow({
           {priorityLabel(m.priorityScore)}
         </span>
       </td>
-      <td onClick={stop}>
+      <td onClick={stop} onPointerDown={stopPointer}>
         <div style={{ display:"flex", gap:5 }}>
           <button onClick={onUpdate} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:11, cursor:"pointer" }}>Update</button>
           <button onClick={onEdit} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>

@@ -290,6 +290,10 @@ async function runAdditiveMigrations() {
     // update modal.
     `ALTER TABLE goals ADD COLUMN IF NOT EXISTS notes TEXT`,
 
+    // Departments — free-text notes shown on the department detail page.
+    // Replaces the old "health" field in the edit form.
+    `ALTER TABLE departments ADD COLUMN IF NOT EXISTS notes TEXT`,
+
     // Tasks
     `CREATE TABLE IF NOT EXISTS tasks (
       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -249,24 +249,35 @@ function AssignmentRow({
   onAssign: () => void;
   onView: () => void;
 }) {
-  const { setNodeRef, style, listeners, attributes } = useSortableItem(m.id);
-  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  const { setNodeRef, style, listeners, attributes, isDragging } = useSortableItem(m.id);
+  // Whole row is draggable. Grip is a passive visual cue. dnd-kit's 5px
+  // activation distance lets the click-to-view handler still fire.
   const handle = dragEnabled ? (
-    <span onClick={stop}><DragHandle listeners={listeners} attributes={attributes} /></span>
+    <span aria-hidden style={{ color: "var(--text-muted)", display: "inline-flex", opacity: 0.5 }}>
+      <GripVertical size={14} />
+    </span>
   ) : undefined;
   const actions = (
-    <button
-      onClick={e => { e.stopPropagation(); onAssign(); }}
-      style={{ padding:"4px 10px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}
-    >
-      + Assign
-    </button>
+    <span onPointerDown={e => e.stopPropagation()}>
+      <button
+        onClick={e => { e.stopPropagation(); onAssign(); }}
+        style={{ padding:"4px 10px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}
+      >
+        + Assign
+      </button>
+    </span>
   );
   return (
     <div
       ref={dragEnabled ? setNodeRef : undefined}
-      style={{ ...(dragEnabled ? style : {}), cursor: "pointer" }}
-      onClick={onView}
+      style={{
+        ...(dragEnabled ? style : {}),
+        cursor: dragEnabled ? "grab" : "pointer",
+        touchAction: dragEnabled ? "none" : undefined,
+      }}
+      onClick={() => { if (!isDragging) onView(); }}
+      {...(dragEnabled ? listeners : {})}
+      {...(dragEnabled ? attributes : {})}
     >
       <AssignmentRowBody m={m} assignees={assignees} dragHandle={handle} actions={actions} />
     </div>

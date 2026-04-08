@@ -4,7 +4,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import AppLayout from "@/components/Layout";
 import {
-  Avatar, Card, ProgressBar, Modal, FormField, HubInput, HubSelect,
+  Avatar, Card, ProgressBar, Modal, FormField, HubInput, HubSelect, HubTextarea,
   ConfirmModal, useToast, ToastList, healthColor, Badge, EmptyState,
 } from "@/components/ui/shared";
 import type { Department, Task, TeamMember, Metric, RevenueEntry, ExpenseEntry, MetricAssignment } from "@/lib/types";
@@ -80,7 +80,7 @@ export default function DepartmentDetailPage() {
   const [showEditDept, setShowEditDept] = useState(false);
   const [deptForm, setDeptForm] = useState({
     name: "", description: "", icon: "💼", color: COLORS[0],
-    health: 0, memberCount: 0, priorityScore: 50,
+    notes: "", priorityScore: 50,
   });
   const [deletingDept, setDeletingDept] = useState(false);
 
@@ -320,8 +320,7 @@ export default function DepartmentDetailPage() {
       description: dept.description ?? "",
       icon: dept.icon,
       color: dept.color,
-      health: dept.health ?? 0,
-      memberCount: dept.memberCount ?? 0,
+      notes: dept.notes ?? "",
       priorityScore: dept.priorityScore ?? 50,
     });
     setShowEditDept(true);
@@ -437,17 +436,17 @@ export default function DepartmentDetailPage() {
       <FormField label="Department Name">
         <HubInput value={deptForm.name} onChange={e => setDeptForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Legal, Design…" />
       </FormField>
-      <FormField label="Description">
-        <HubInput value={deptForm.description} onChange={e => setDeptForm(p => ({ ...p, description: e.target.value }))} placeholder="Brief description…" />
+      <FormField label="Description (one line, shown on the card)">
+        <HubInput value={deptForm.description} onChange={e => setDeptForm(p => ({ ...p, description: e.target.value }))} placeholder="Short tagline" />
       </FormField>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <FormField label="Members">
-          <HubInput type="number" min="0" value={deptForm.memberCount} onChange={e => setDeptForm(p => ({ ...p, memberCount: +e.target.value }))} />
-        </FormField>
-        <FormField label="Health (%)">
-          <HubInput type="number" min="0" max="100" value={deptForm.health} onChange={e => setDeptForm(p => ({ ...p, health: +e.target.value }))} />
-        </FormField>
-      </div>
+      <FormField label="Notes (long-form, shown below the header on this page)">
+        <HubTextarea
+          rows={5}
+          value={deptForm.notes}
+          onChange={e => setDeptForm(p => ({ ...p, notes: e.target.value }))}
+          placeholder="Add context, OKRs, escalation contacts, anything the team should see when they open this department…"
+        />
+      </FormField>
       <FormField label="Priority">
         <HubSelect
           value={String(priorityToOption(deptForm.priorityScore))}
@@ -563,6 +562,16 @@ export default function DepartmentDetailPage() {
           </div>
         </div>
       </Card>
+
+      {/* Notes — long-form free text from the department edit form. Only
+          rendered when there's content; the section is hidden otherwise so
+          empty departments don't waste vertical space. */}
+      {dept.notes && (
+        <div style={{ marginTop: 12, padding: "14px 18px", borderRadius: 12, background: "var(--bg-card)", border: "1px solid var(--border-card)" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".07em", color: "var(--text-muted)", marginBottom: 8 }}>NOTES</div>
+          <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{dept.notes}</div>
+        </div>
+      )}
 
       {/* Due alert banner — combines this department's tasks and metrics
           into a single overdue / due-soon view. */}

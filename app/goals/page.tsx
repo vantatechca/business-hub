@@ -259,16 +259,32 @@ function GoalCard({
   onDelete: () => void;
 }) {
   const { setNodeRef, style, listeners, attributes } = useSortableItem(g.id);
-  const handle = dragEnabled ? <DragHandle listeners={listeners} attributes={attributes} /> : undefined;
+  // Whole card draggable. The grip is just a passive visual cue.
+  const handle = dragEnabled ? (
+    <span aria-hidden style={{ color: "var(--text-muted)", display: "inline-flex", opacity: 0.5 }}>
+      <GripVertical size={14} />
+    </span>
+  ) : undefined;
   const actions = (
-    <div style={{ display:"flex", gap:7 }}>
+    // Stop pointerdown on the action row so dragging doesn't kick in when
+    // a user clicks Update / Edit / Delete.
+    <div style={{ display:"flex", gap:7 }} onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
       <button onClick={onUpdate} style={{ flex:1, padding:"5px 8px", borderRadius:7, border:`1px solid ${g.color}44`, background:`${g.color}11`, color:g.color, fontSize:11, fontWeight:700, cursor:"pointer" }}>Update</button>
       <button onClick={onEdit} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)" }}>Edit</button>
       <button onClick={onDelete} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", background:"var(--danger-bg)", color:"var(--danger)", borderColor:"rgba(220,38,38,.3)", border:"1px solid rgba(220,38,38,.3)" }}>✕</button>
     </div>
   );
   return (
-    <div ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
+    <div
+      ref={dragEnabled ? setNodeRef : undefined}
+      style={{
+        ...(dragEnabled ? style : {}),
+        cursor: dragEnabled ? "grab" : undefined,
+        touchAction: dragEnabled ? "none" : undefined,
+      }}
+      {...(dragEnabled ? listeners : {})}
+      {...(dragEnabled ? attributes : {})}
+    >
       <GoalCardBody g={g} dragHandle={handle} actions={actions} />
     </div>
   );

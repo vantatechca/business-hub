@@ -42,6 +42,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (b.priorityScore  !== undefined) await sql`UPDATE departments SET priority_score = ${Number(b.priorityScore) || 0}, updated_at = NOW() WHERE id::text = ${realId}`;
     if (b.googleSheetUrl !== undefined) await sql`UPDATE departments SET google_sheet_url = ${(b.googleSheetUrl as string) || null}, updated_at = NOW() WHERE id::text = ${realId}`;
     if (b.description    !== undefined) await sql`UPDATE departments SET description = ${(b.description as string) || null}, updated_at = NOW() WHERE id::text = ${realId}`;
+    if (b.head           !== undefined) await sql`UPDATE departments SET description = ${(b.head as string) || null}, updated_at = NOW() WHERE id::text = ${realId}`;
+    if (b.notes          !== undefined) await sql`UPDATE departments SET notes = ${(b.notes as string) || null}, updated_at = NOW() WHERE id::text = ${realId}`;
 
     const rows = await sql`SELECT * FROM departments WHERE id::text = ${realId}`;
     return NextResponse.json({ data: toCamel(rows[0] as Record<string, unknown>) });

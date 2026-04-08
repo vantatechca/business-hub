@@ -72,6 +72,7 @@ export interface Department {
   id: string; name: string; slug: string; color: string; icon: string;
   priorityScore: number; googleSheetUrl?: string; description?: string; sortOrder: number;
   createdAt?: string; metricCount?: number; memberCount?: number; health?: number;
+  notes?: string | null;
 }
 
 export interface Metric {
