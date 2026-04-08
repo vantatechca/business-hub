@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Card, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState, ProgressBar, formatMetricValue, priorityColor, priorityLabel, healthColor } from "@/components/ui/shared";
 import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
+import MetricHistoryDrawer from "@/components/MetricHistoryDrawer";
 import type { Metric, Department } from "@/lib/types";
 import { metricDelta } from "@/lib/types";
 
@@ -28,6 +29,7 @@ export default function MetricsPage() {
   const [deleting, setDeleting] = useState<Metric | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
   const [updating, setUpdating] = useState<{ metric: Metric; value: string } | null>(null);
+  const [viewing, setViewing] = useState<Metric | null>(null);
   const { ts, toast } = useToast();
 
   const load = () => Promise.all([
@@ -192,6 +194,7 @@ export default function MetricsPage() {
                     key={m.id}
                     m={m}
                     dragEnabled={dragEnabled}
+                    onView={() => setViewing(m)}
                     onUpdate={() => setUpdating({ metric:m, value:String(m.currentValue) })}
                     onEdit={() => openEdit(m)}
                     onDelete={() => setDeleting(m)}
@@ -218,6 +221,7 @@ export default function MetricsPage() {
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Metric" width={560}>{metricForm}{actionBtns(save, () => setShowAdd(false), "Add Metric")}</Modal>
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`} width={560}>{metricForm}{actionBtns(update, () => setEditing(null), "Save Changes")}</Modal>
       <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={del} name={deleting?.name ?? ""} entity="metric"/>
+      <MetricHistoryDrawer metric={viewing} open={!!viewing} onClose={() => setViewing(null)} />
     </AppLayout>
   );
 }
@@ -225,12 +229,14 @@ export default function MetricsPage() {
 function MetricRow({
   m,
   dragEnabled,
+  onView,
   onUpdate,
   onEdit,
   onDelete,
 }: {
   m: Metric;
   dragEnabled: boolean;
+  onView: () => void;
   onUpdate: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -239,10 +245,15 @@ function MetricRow({
   const pct = m.targetValue ? Math.min(100, Math.round((m.currentValue / m.targetValue) * 100)) : null;
   const { isGood, value: delta } = metricDelta(m);
   const pc = priorityColor(m.priorityScore);
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
-    <tr ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
+    <tr
+      ref={dragEnabled ? setNodeRef : undefined}
+      style={{ ...(dragEnabled ? style : {}), cursor: "pointer" }}
+      onClick={onView}
+    >
       {dragEnabled && (
-        <td style={{ width:26 }}>
+        <td style={{ width:26 }} onClick={stop}>
           <DragHandle listeners={listeners} attributes={attributes} />
         </td>
       )}
@@ -281,7 +292,7 @@ function MetricRow({
           {m.priorityScore} · {priorityLabel(m.priorityScore)}
         </span>
       </td>
-      <td>
+      <td onClick={stop}>
         <div style={{ display:"flex", gap:5 }}>
           <button onClick={onUpdate} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:11, cursor:"pointer" }}>Update</button>
           <button onClick={onEdit} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
