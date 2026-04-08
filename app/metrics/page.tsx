@@ -9,10 +9,22 @@ import MetricHistoryDrawer from "@/components/MetricHistoryDrawer";
 import type { Metric, Department } from "@/lib/types";
 import { metricDelta, PRIORITY_OPTIONS, priorityToOption } from "@/lib/types";
 
-const TYPES = ["value","daily"];
+// The DB stores 'value' but the UI label is "Total" — keep the storage value
+// unchanged so existing rows don't need a migration / CHECK constraint update.
+const TYPES: { value: Metric["metricType"]; label: string }[] = [
+  { value: "value", label: "Total" },
+  { value: "daily", label: "Daily" },
+];
 const DIRS  = ["higher_better","lower_better"];
 const UNITS = ["count","USD","CAD","minutes","percent","pages","accounts"];
-const blank = { departmentId:"", name:"", metricType:"value" as Metric["metricType"], direction:"higher_better" as Metric["direction"], currentValue:0, targetValue:undefined as number|undefined, unit:"count", priorityScore:25, notes:"" };
+const blank = { departmentId:"", name:"", metricType:"value" as Metric["metricType"], direction:"higher_better" as Metric["direction"], currentValue:0, targetValue:undefined as number|undefined, unit:"count", priorityScore:25, notes:"", dueDate:"" as string };
+
+// Convert a stored metric_type to its UI label.
+function metricTypeLabel(t: string): string {
+  if (t === "value") return "Total";
+  if (t === "daily") return "Daily";
+  return t.replace(/_/g, " ");
+}
 
 export default function MetricsPage() {
   const { data: session } = useSession();
@@ -96,7 +108,18 @@ export default function MetricsPage() {
 
   const openEdit = (m: Metric) => {
     setEditing(m);
-    setForm({ departmentId:m.departmentId, name:m.name, metricType:m.metricType, direction:m.direction, currentValue:m.currentValue, targetValue:m.targetValue, unit:m.unit, priorityScore:m.priorityScore, notes:m.notes ?? "" });
+    setForm({
+      departmentId: m.departmentId,
+      name: m.name,
+      metricType: m.metricType,
+      direction: m.direction,
+      currentValue: m.currentValue,
+      targetValue: m.targetValue,
+      unit: m.unit,
+      priorityScore: m.priorityScore,
+      notes: m.notes ?? "",
+      dueDate: ((m as unknown as { dueDate?: string | null }).dueDate) ?? "",
+    });
   };
 
   const metricForm = (
@@ -111,7 +134,7 @@ export default function MetricsPage() {
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:11 }}>
         <FormField label="Type">
           <HubSelect value={form.metricType} onChange={e => setForm(p => ({...p, metricType:e.target.value as Metric["metricType"]}))}>
-            {TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g," ")}</option>)}
+            {TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </HubSelect>
         </FormField>
         <FormField label="Direction">
@@ -140,6 +163,13 @@ export default function MetricsPage() {
         </FormField>
       </div>
       <FormField label="Notes"><HubInput value={form.notes} onChange={e => setForm(p => ({...p, notes:e.target.value}))} placeholder="Operational notes…"/></FormField>
+      <FormField label="Due Date (optional)">
+        <HubInput
+          type="date"
+          value={form.dueDate}
+          onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}
+        />
+      </FormField>
     </div>
   );
 
@@ -181,7 +211,7 @@ export default function MetricsPage() {
         </select>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px", color:"var(--text-primary)", fontSize:12, outline:"none" }}>
           <option value="">All Types</option>
-          {TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g," ")}</option>)}
+          {TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
         <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>{filtered.length} metrics</span>
       </div>
@@ -285,7 +315,7 @@ function MetricRow({
           <span style={{ fontSize:11, color:"var(--text-secondary)" }}>{m.departmentName}</span>
         </div>
       </td>
-      <td><span style={{ fontSize:10, padding:"2px 7px", borderRadius:5, background:"var(--bg-input)", color:"var(--text-secondary)", fontWeight:700 }}>{m.metricType.replace(/_/g," ")}</span></td>
+      <td><span style={{ fontSize:10, padding:"2px 7px", borderRadius:5, background:"var(--bg-input)", color:"var(--text-secondary)", fontWeight:700 }}>{metricTypeLabel(m.metricType)}</span></td>
       <td>
         <div>
           <div style={{ fontSize:13, fontWeight:800, color: isGood ? "var(--success)" : delta !== 0 ? "var(--danger)" : "var(--text-primary)" }}>

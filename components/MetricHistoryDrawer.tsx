@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metric } from "@/lib/types";
-import { formatMetricValue, healthColor } from "@/lib/types";
+import { formatMetricValue, healthColor, priorityLabel, priorityColor, formatTaskDueDate, isTaskDueTodayOrPast } from "@/lib/types";
+import { Avatar } from "@/components/ui/shared";
 
 interface DayPoint { date: string; value: number; count: number; }
 interface UpdateEntry {
@@ -15,8 +16,18 @@ interface UpdateEntry {
   notes: string | null;
   userName: string | null;
 }
+interface DrawerAssignee {
+  userId: string;
+  name: string;
+  initials: string;
+  roleInMetric: string;
+}
 interface HistoryResponse {
-  metric: Metric & { departmentName?: string };
+  metric: Omit<Metric, "assignees"> & {
+    departmentName?: string;
+    dueDate?: string | null;
+    assignees?: DrawerAssignee[];
+  };
   updates: UpdateEntry[];
   daily: DayPoint[];
 }
@@ -84,13 +95,61 @@ export default function MetricHistoryDrawer({
           </button>
         </div>
 
-        <div style={{ padding: "16px 22px", display: "flex", gap: 18 }}>
+        <div style={{ padding: "16px 22px", display: "flex", gap: 18, flexWrap: "wrap" }}>
           <Stat label="Current" value={formatMetricValue(metric.currentValue, metric.unit)} color="var(--accent)" />
           {metric.targetValue != null && (
             <Stat label="Target" value={formatMetricValue(metric.targetValue, metric.unit)} color="var(--text-primary)" />
           )}
-          <Stat label="Type" value={metric.metricType.replace(/_/g, " ")} color="var(--text-secondary)" />
+          <Stat
+            label="Type"
+            value={metric.metricType === "value" ? "Total" : metric.metricType.replace(/_/g, " ")}
+            color="var(--text-secondary)"
+          />
+          <Stat
+            label="Priority"
+            value={priorityLabel(metric.priorityScore)}
+            color={priorityColor(metric.priorityScore)}
+          />
+          {(data?.metric.dueDate || metric.dueDate) && (
+            <Stat
+              label="Due"
+              value={formatTaskDueDate((data?.metric.dueDate || metric.dueDate) as string)}
+              color={isTaskDueTodayOrPast((data?.metric.dueDate || metric.dueDate) as string) ? "var(--danger)" : "var(--text-primary)"}
+            />
+          )}
         </div>
+
+        {/* Notes */}
+        {(data?.metric.notes || metric.notes) && (
+          <div style={{ padding: "0 22px 12px" }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".07em", marginBottom: 5 }}>NOTES</div>
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--bg-input)", fontSize: 12, color: "var(--text-primary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+              {(data?.metric.notes || metric.notes) as string}
+            </div>
+          </div>
+        )}
+
+        {/* Assignees */}
+        {data?.metric.assignees && data.metric.assignees.length > 0 && (
+          <div style={{ padding: "0 22px 14px" }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".07em", marginBottom: 6 }}>
+              ASSIGNEES ({data.metric.assignees.length})
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {data.metric.assignees.map(a => (
+                <div
+                  key={a.userId}
+                  title={`${a.name} · ${a.roleInMetric}`}
+                  style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px 6px 6px", borderRadius: 999, background: "var(--bg-input)", border: "1px solid var(--border-card)", cursor: "help" }}
+                >
+                  <Avatar s={a.initials} size={22} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)" }}>{a.name}</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{a.roleInMetric}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {loading && (
           <div style={{ padding: 36, textAlign: "center", color: "var(--text-secondary)", fontSize: 12 }}>

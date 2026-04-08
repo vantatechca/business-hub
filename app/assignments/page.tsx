@@ -6,7 +6,8 @@ import { Avatar, Modal, FormField, HubSelect, useToast, ToastList, priorityColor
 import { Sortable, useSortableItem, DragHandle, overlayCardStyle } from "@/components/ui/Sortable";
 import { GripVertical } from "lucide-react";
 import type { Metric, User, MetricAssignment } from "@/lib/types";
-import { getInitials } from "@/lib/types";
+import { getInitials, priorityLabel } from "@/lib/types";
+import MetricHistoryDrawer from "@/components/MetricHistoryDrawer";
 
 const ROLE_COLORS: Record<string,string> = { owner:"var(--warning)", contributor:"var(--accent)", reviewer:"var(--violet)" };
 
@@ -23,6 +24,8 @@ export default function AssignmentsPage() {
   const [showAssign, setShowAssign] = useState(false);
   const [aForm, setAForm]           = useState({ userId:"", roleInMetric:"contributor" as MetricAssignment["roleInMetric"] });
   const [q, setQ]                   = useState("");
+  // Clicking a metric row opens the history drawer (reused from /metrics).
+  const [viewing, setViewing]       = useState<Metric | null>(null);
   const { ts, toast } = useToast();
 
   const load = () => Promise.all([
@@ -130,6 +133,7 @@ export default function AssignmentsPage() {
                       dragEnabled={dragEnabled}
                       assignees={metricAssignees(m.id)}
                       onAssign={() => { setSelected(m); setAForm({ userId: assignedUsers[0]?.id ?? "", roleInMetric:"contributor" }); setShowAssign(true); }}
+                      onView={() => setViewing(m)}
                     />
                   ))}
                 </div>
@@ -177,6 +181,8 @@ export default function AssignmentsPage() {
           <button onClick={assign} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Assign Member</button>
         </div>
       </Modal>
+
+      <MetricHistoryDrawer metric={viewing} open={!!viewing} onClose={() => setViewing(null)} />
     </AppLayout>
   );
 }
@@ -193,16 +199,17 @@ function AssignmentRowBody({
   actions?: React.ReactNode;
 }) {
   const pc = priorityColor(m.priorityScore);
+  const typeLabel = m.metricType === "value" ? "total" : m.metricType.replace(/_/g, " ");
   return (
     <div className="hub-card">
       <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:14 }}>
         {dragHandle}
         <span style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:800, background:`${pc}18`, color:pc, flexShrink:0 }}>
-          {m.priorityScore}
+          {priorityLabel(m.priorityScore)}
         </span>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.name}</div>
-          <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>{m.metricType.replace(/_/g," ")} · {m.direction.replace(/_/g," ")}</div>
+          <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>{typeLabel} · {m.direction.replace(/_/g," ")}</div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
           {assignees.length === 0 ? (
@@ -210,7 +217,11 @@ function AssignmentRowBody({
           ) : (
             <div style={{ display:"flex", gap:4 }}>
               {assignees.slice(0,5).map(a => (
-                <div key={a.id} title={`${a.userName} · ${a.roleInMetric}`} style={{ position:"relative" }}>
+                <div
+                  key={a.id}
+                  title={`${a.userName ?? ""} · ${a.roleInMetric}`}
+                  style={{ position:"relative", cursor: "help" }}
+                >
                   <Avatar s={a.userInitials ?? getInitials(a.userName ?? "?")} size={26}/>
                   <div style={{ position:"absolute", bottom:-2, right:-2, width:8, height:8, borderRadius:"50%", background:ROLE_COLORS[a.roleInMetric] ?? "var(--accent)", border:"1.5px solid var(--bg-card)" }}/>
                 </div>
@@ -230,21 +241,33 @@ function AssignmentRow({
   dragEnabled,
   assignees,
   onAssign,
+  onView,
 }: {
   m: Metric;
   dragEnabled: boolean;
   assignees: MetricAssignment[];
   onAssign: () => void;
+  onView: () => void;
 }) {
   const { setNodeRef, style, listeners, attributes } = useSortableItem(m.id);
-  const handle = dragEnabled ? <DragHandle listeners={listeners} attributes={attributes} /> : undefined;
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  const handle = dragEnabled ? (
+    <span onClick={stop}><DragHandle listeners={listeners} attributes={attributes} /></span>
+  ) : undefined;
   const actions = (
-    <button onClick={onAssign} style={{ padding:"4px 10px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>
+    <button
+      onClick={e => { e.stopPropagation(); onAssign(); }}
+      style={{ padding:"4px 10px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}
+    >
       + Assign
     </button>
   );
   return (
-    <div ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
+    <div
+      ref={dragEnabled ? setNodeRef : undefined}
+      style={{ ...(dragEnabled ? style : {}), cursor: "pointer" }}
+      onClick={onView}
+    >
       <AssignmentRowBody m={m} assignees={assignees} dragHandle={handle} actions={actions} />
     </div>
   );

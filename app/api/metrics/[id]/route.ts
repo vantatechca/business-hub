@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, toCamel } from "@/lib/db";
+import { sql, toCamel, toDateString } from "@/lib/db";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -9,6 +9,7 @@ function coerceMetric(m: Record<string, unknown>): Record<string, unknown> {
   for (const f of NUMERIC_FIELDS) {
     if (out[f] != null) out[f] = Number(out[f]);
   }
+  if (out.dueDate != null) out.dueDate = toDateString(out.dueDate);
   return out;
 }
 
@@ -56,6 +57,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const priorityScore = "priorityScore" in b ? toInt(b.priorityScore) : undefined;
   const departmentId  = "departmentId"  in b ? toStr(b.departmentId)  : undefined;
   const sortOrder     = "sortOrder"     in b ? toInt(b.sortOrder)     : undefined;
+  // dueDate: empty string / null means clear it. Anything else is YYYY-MM-DD.
+  const dueDate       = "dueDate"       in b ? (b.dueDate || null)    : undefined;
 
   const auditUserId = toStr(b.userId);
   const auditSource = toStr(b.source) ?? "manual";
@@ -99,6 +102,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (priorityScore!= null) await sql`UPDATE metrics SET priority_score = ${priorityScore}, updated_at = NOW() WHERE id = ${params.id}`;
     if (departmentId != null) await sql`UPDATE metrics SET department_id = ${departmentId}, updated_at = NOW() WHERE id = ${params.id}`;
     if (sortOrder    != null) await sql`UPDATE metrics SET sort_order = ${sortOrder}, updated_at = NOW() WHERE id = ${params.id}`;
+    if (dueDate      !== undefined) await sql`UPDATE metrics SET due_date = ${dueDate}, updated_at = NOW() WHERE id = ${params.id}`;
 
     // Return the final state
     const finalRows = await sql`
