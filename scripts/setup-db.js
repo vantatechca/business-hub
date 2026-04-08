@@ -30,6 +30,14 @@ if (!process.env.DATABASE_URL) {
 
 const sql = neon(process.env.DATABASE_URL);
 
+// The @neondatabase/serverless `sql` tagged-template function also accepts a
+// direct plain-string call for queries without parameters (which is what we
+// want for DDL). Older versions of this script used sql.unsafe(), which
+// doesn't exist in current versions of the package.
+async function execRaw(statement) {
+  return sql(statement);
+}
+
 async function run() {
   console.log("🚀  Business Hub V2 — Database Setup\n");
 
@@ -45,31 +53,37 @@ async function run() {
 
   console.log("📐  Running migrations...");
   const migrateStmts = split(migrate);
+  let migrateOk = 0;
   for (const stmt of migrateStmts) {
     try {
-      await sql.unsafe(stmt + ";");
+      await execRaw(stmt);
+      migrateOk++;
       process.stdout.write(".");
     } catch (e) {
-      if (!e.message.includes("already exists")) {
-        console.error("\n⚠️  Migration warning:", e.message.slice(0, 100));
+      const msg = String(e.message || "");
+      if (!msg.includes("already exists")) {
+        console.error("\n⚠️  Migration warning:", msg.slice(0, 160));
       }
     }
   }
-  console.log("\n✅  Migrations complete\n");
+  console.log(`\n✅  Migrations complete (${migrateOk}/${migrateStmts.length} ok)\n`);
 
   console.log("🌱  Seeding data...");
   const seedStmts = split(seed);
+  let seedOk = 0;
   for (const stmt of seedStmts) {
     try {
-      await sql.unsafe(stmt + ";");
+      await execRaw(stmt);
+      seedOk++;
       process.stdout.write(".");
     } catch (e) {
-      if (!e.message.includes("conflict") && !e.message.includes("duplicate")) {
-        console.error("\n⚠️  Seed warning:", e.message.slice(0, 100));
+      const msg = String(e.message || "");
+      if (!msg.includes("conflict") && !msg.includes("duplicate")) {
+        console.error("\n⚠️  Seed warning:", msg.slice(0, 160));
       }
     }
   }
-  console.log("\n✅  Seed complete\n");
+  console.log(`\n✅  Seed complete (${seedOk}/${seedStmts.length} ok)\n`);
 
   // Verify counts
   const [depts]   = await sql`SELECT COUNT(*) FROM departments`;
