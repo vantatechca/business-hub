@@ -104,6 +104,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           metadata: { title: row.title, category: row.category },
           req,
         });
+      } else if (next === "in_progress") {
+        // Moving to in_progress = "I'm taking this". Auto-set assignee_id to
+        // the actor so the issue card shows who picked it up. If somebody
+        // had already been explicitly assigned we don't overwrite that.
+        await sql`
+          UPDATE issues
+          SET status = 'in_progress',
+              assignee_id = COALESCE(assignee_id, ${me.id})
+          WHERE id = ${params.id}
+        `;
+        await logAudit({
+          action: "issue.status_change",
+          entityType: "issue",
+          entityId: params.id,
+          metadata: { from: row.status, to: next, takenBy: me.id },
+          req,
+        });
       } else {
         await sql`UPDATE issues SET status = ${next} WHERE id = ${params.id}`;
         await logAudit({

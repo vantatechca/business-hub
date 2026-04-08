@@ -24,7 +24,21 @@ export default function DepartmentsPage() {
   const [editing, setEditing] = useState<Department | null>(null);
   const [deleting, setDeleting] = useState<Department | null>(null);
   const [form, setForm] = useState(blank);
+  const [q, setQ] = useState("");
   const { ts, toast } = useToast();
+
+  // Filtered list — name + description (head). Empty query shows everything.
+  // Search is plain case-insensitive substring; the list is small so a more
+  // sophisticated index isn't needed.
+  const filteredDepts = q.trim()
+    ? depts.filter(d => {
+        const needle = q.toLowerCase();
+        return (
+          d.name.toLowerCase().includes(needle)
+          || (d.description ?? "").toLowerCase().includes(needle)
+        );
+      })
+    : depts;
 
   const handleReorder = async (ids: (string | number)[]) => {
     const map = new Map(depts.map(d => [String(d.id), d]));
@@ -86,7 +100,24 @@ export default function DepartmentsPage() {
   return (
     <AppLayout title="Departments" onNew={openAdd} newLabel="Add Department">
       <ToastList ts={ts} />
-      <div style={{ fontSize:12, color:"var(--text-secondary)", marginBottom:14 }}>{depts.length} department{depts.length !== 1 ? "s" : ""}</div>
+
+      {/* Search + counter row. Reordering is disabled while a search filter
+          is active because the visible list isn't the canonical order. */}
+      <div style={{ display:"flex", gap:10, marginBottom:14, alignItems:"center", flexWrap:"wrap" }}>
+        <div style={{ flex:1, minWidth:200, display:"flex", alignItems:"center", gap:8, background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px" }}>
+          <span style={{ color:"var(--text-muted)", fontSize:14 }}>⌕</span>
+          <input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Search departments by name or description…"
+            style={{ border:"none", background:"transparent", outline:"none", fontSize:12, color:"var(--text-primary)", width:"100%" }}
+          />
+        </div>
+        <span style={{ fontSize:12, color:"var(--text-secondary)" }}>
+          {filteredDepts.length} department{filteredDepts.length !== 1 ? "s" : ""}
+          {q && depts.length !== filteredDepts.length && ` of ${depts.length}`}
+        </span>
+      </div>
 
       {loading ? (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
@@ -94,20 +125,22 @@ export default function DepartmentsPage() {
         </div>
       ) : depts.length === 0 ? (
         <EmptyState icon="⬡" title="No departments yet" desc="Add your first department to get started." action={<button onClick={openAdd} style={{ padding:"8px 18px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>Add Department</button>} />
+      ) : filteredDepts.length === 0 ? (
+        <EmptyState icon="🔎" title="No matches" desc={`Nothing matches "${q}". Try a different search.`} />
       ) : (
         <Sortable
-          items={depts}
+          items={filteredDepts}
           onReorder={handleReorder}
           strategy="grid"
-          disabled={!canReorder}
+          disabled={!canReorder || !!q}
           renderOverlay={d => <DeptCardPreview d={d} />}
         >
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:12 }} className="stagger-children">
-            {depts.map(d => (
+            {filteredDepts.map(d => (
               <DeptCard
                 key={d.id}
                 d={d}
-                dragEnabled={canReorder}
+                dragEnabled={canReorder && !q}
                 onEdit={() => openEdit(d)}
                 onDelete={() => setDeleting(d)}
               />

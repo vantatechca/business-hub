@@ -40,9 +40,11 @@ export default function ReportIssueModal({ open, onClose, onCreated }: Props) {
 
   // Filter the assignee dropdown to roles that can actually act on this
   // category. system → admin only. work → lead+ (lead, manager, admin).
+  // Super admin is intentionally NOT listed in the dropdown — they still
+  // receive routing on the backend, but the role isn't visible to reporters.
   const eligibleAssignees = users.filter(u => {
-    if (category === "system") return u.role === "admin" || u.role === "super_admin";
-    return u.role === "lead" || u.role === "manager" || u.role === "admin" || u.role === "super_admin" || u.role === "leader";
+    if (category === "system") return u.role === "admin";
+    return u.role === "lead" || u.role === "manager" || u.role === "admin" || u.role === "leader";
   });
 
   const submit = async () => {
@@ -118,7 +120,7 @@ export default function ReportIssueModal({ open, onClose, onCreated }: Props) {
       </FormField>
       <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 12 }}>
         {category === "system"
-          ? "System issues are routed to admins and the super admin."
+          ? "System issues are routed to admins."
           : "Work issues are routed to leads, managers, and admins."}
       </div>
       <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
