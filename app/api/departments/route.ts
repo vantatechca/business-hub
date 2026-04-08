@@ -8,7 +8,7 @@ export async function GET() {
       FROM departments d
       LEFT JOIN metrics m ON m.department_id = d.id
       LEFT JOIN metric_assignments ma ON ma.metric_id = m.id
-      GROUP BY d.id ORDER BY d.priority_score DESC, d.sort_order ASC
+      GROUP BY d.id ORDER BY d.sort_order ASC, d.priority_score DESC
     `;
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]) });
   } catch { return NextResponse.json({ error: "DB not configured" }, { status: 503 }); }

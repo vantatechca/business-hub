@@ -1,16 +1,22 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Card, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState, ProgressBar, formatMetricValue, priorityColor, priorityLabel, healthColor } from "@/components/ui/shared";
+import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
 import type { Metric, Department } from "@/lib/types";
 import { metricDelta } from "@/lib/types";
 
-const TYPES = ["value","daily","value_and_daily"];
+const TYPES = ["value","daily"];
 const DIRS  = ["higher_better","lower_better"];
 const UNITS = ["count","USD","CAD","minutes","percent","pages","accounts"];
 const blank = { departmentId:"", name:"", metricType:"value" as Metric["metricType"], direction:"higher_better" as Metric["direction"], currentValue:0, targetValue:undefined as number|undefined, unit:"count", priorityScore:50, notes:"" };
 
 export default function MetricsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string })?.role ?? "member";
+  const canReorder = role === "admin" || role === "leader";
+
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [depts, setDepts]     = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +42,25 @@ export default function MetricsPage() {
     (!deptFilter || m.departmentId === deptFilter) &&
     (!typeFilter || m.metricType === typeFilter)
   );
+  const filterActive = !!(q || deptFilter || typeFilter);
+  const dragEnabled = canReorder && !filterActive;
+
+  const handleReorder = async (ids: (string | number)[]) => {
+    // Optimistic: reorder local state to match dropped order
+    const map = new Map(metrics.map(m => [String(m.id), m]));
+    const next = ids.map(id => map.get(String(id))).filter(Boolean) as Metric[];
+    // Preserve any items not in the dragged view (shouldn't happen since dragEnabled
+    // only when filters inactive, but defensive)
+    const used = new Set(ids.map(String));
+    const rest = metrics.filter(m => !used.has(String(m.id)));
+    setMetrics([...next, ...rest]);
+    const res = await fetch("/api/metrics/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) { toast("Reorder failed", "er"); await load(); }
+  };
 
   const save = async () => {
     if (!form.name || !form.departmentId) return toast("Name and department required", "er");
@@ -158,61 +183,22 @@ export default function MetricsPage() {
         <div className="hub-card" style={{ padding:0, overflow:"hidden" }}>
           <table className="hub-table">
             <thead>
-              <tr>{["Metric","Department","Type","Current","Target","Progress","Priority",""].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>{[dragEnabled ? "" : null,"Metric","Department","Type","Current","Target","Progress","Priority",""].filter(h=>h!==null).map((h,i) => <th key={i}>{h}</th>)}</tr>
             </thead>
-            <tbody>
-              {filtered.map(m => {
-                const pct = m.targetValue ? Math.min(100, Math.round((m.currentValue / m.targetValue) * 100)) : null;
-                const { isGood, value: delta } = metricDelta(m);
-                const pc = priorityColor(m.priorityScore);
-                return (
-                  <tr key={m.id}>
-                    <td>
-                      <div>
-                        <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.name}</div>
-                        {m.notes && <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>{m.notes.slice(0,40)}</div>}
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <div style={{ width:6, height:6, borderRadius:"50%", background:m.departmentColor ?? "var(--accent)" }}/>
-                        <span style={{ fontSize:11, color:"var(--text-secondary)" }}>{m.departmentName}</span>
-                      </div>
-                    </td>
-                    <td><span style={{ fontSize:10, padding:"2px 7px", borderRadius:5, background:"var(--bg-input)", color:"var(--text-secondary)", fontWeight:700 }}>{m.metricType.replace(/_/g," ")}</span></td>
-                    <td>
-                      <div>
-                        <div style={{ fontSize:13, fontWeight:800, color: isGood ? "var(--success)" : delta !== 0 ? "var(--danger)" : "var(--text-primary)" }}>
-                          {formatMetricValue(m.currentValue, m.unit)}
-                        </div>
-                        {delta !== 0 && <div style={{ fontSize:10, color: isGood ? "var(--success)" : "var(--danger)" }}>{delta > 0 ? "↑" : "↓"} {Math.abs(delta).toLocaleString()}</div>}
-                      </div>
-                    </td>
-                    <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{m.targetValue ? formatMetricValue(m.targetValue, m.unit) : "—"}</td>
-                    <td style={{ minWidth:100 }}>
-                      {pct !== null ? (
-                        <div>
-                          <ProgressBar value={pct} color={healthColor(pct)} height={5}/>
-                          <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:3 }}>{pct}%</div>
-                        </div>
-                      ) : <span style={{ color:"var(--text-muted)", fontSize:12 }}>—</span>}
-                    </td>
-                    <td>
-                      <span style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:700, background:`${pc}18`, color:pc }}>
-                        {m.priorityScore} · {priorityLabel(m.priorityScore)}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display:"flex", gap:5 }}>
-                        <button onClick={() => setUpdating({ metric:m, value:String(m.currentValue) })} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:11, cursor:"pointer" }}>Update</button>
-                        <button onClick={() => openEdit(m)} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
-                        <button onClick={() => setDeleting(m)} style={{ padding:"4px 7px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
+            <Sortable items={filtered} onReorder={handleReorder} strategy="vertical" disabled={!dragEnabled}>
+              <tbody>
+                {filtered.map(m => (
+                  <MetricRow
+                    key={m.id}
+                    m={m}
+                    dragEnabled={dragEnabled}
+                    onUpdate={() => setUpdating({ metric:m, value:String(m.currentValue) })}
+                    onEdit={() => openEdit(m)}
+                    onDelete={() => setDeleting(m)}
+                  />
+                ))}
+              </tbody>
+            </Sortable>
           </table>
         </div>
       )}
@@ -233,5 +219,75 @@ export default function MetricsPage() {
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`} width={560}>{metricForm}{actionBtns(update, () => setEditing(null), "Save Changes")}</Modal>
       <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={del} name={deleting?.name ?? ""} entity="metric"/>
     </AppLayout>
+  );
+}
+
+function MetricRow({
+  m,
+  dragEnabled,
+  onUpdate,
+  onEdit,
+  onDelete,
+}: {
+  m: Metric;
+  dragEnabled: boolean;
+  onUpdate: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { setNodeRef, style, listeners, attributes } = useSortableItem(m.id);
+  const pct = m.targetValue ? Math.min(100, Math.round((m.currentValue / m.targetValue) * 100)) : null;
+  const { isGood, value: delta } = metricDelta(m);
+  const pc = priorityColor(m.priorityScore);
+  return (
+    <tr ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
+      {dragEnabled && (
+        <td style={{ width:26 }}>
+          <DragHandle listeners={listeners} attributes={attributes} />
+        </td>
+      )}
+      <td>
+        <div>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.name}</div>
+          {m.notes && <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>{m.notes.slice(0,40)}</div>}
+        </div>
+      </td>
+      <td>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ width:6, height:6, borderRadius:"50%", background:m.departmentColor ?? "var(--accent)" }}/>
+          <span style={{ fontSize:11, color:"var(--text-secondary)" }}>{m.departmentName}</span>
+        </div>
+      </td>
+      <td><span style={{ fontSize:10, padding:"2px 7px", borderRadius:5, background:"var(--bg-input)", color:"var(--text-secondary)", fontWeight:700 }}>{m.metricType.replace(/_/g," ")}</span></td>
+      <td>
+        <div>
+          <div style={{ fontSize:13, fontWeight:800, color: isGood ? "var(--success)" : delta !== 0 ? "var(--danger)" : "var(--text-primary)" }}>
+            {formatMetricValue(m.currentValue, m.unit)}
+          </div>
+          {delta !== 0 && <div style={{ fontSize:10, color: isGood ? "var(--success)" : "var(--danger)" }}>{delta > 0 ? "↑" : "↓"} {Math.abs(delta).toLocaleString()}</div>}
+        </div>
+      </td>
+      <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{m.targetValue ? formatMetricValue(m.targetValue, m.unit) : "—"}</td>
+      <td style={{ minWidth:100 }}>
+        {pct !== null ? (
+          <div>
+            <ProgressBar value={pct} color={healthColor(pct)} height={5}/>
+            <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:3 }}>{pct}%</div>
+          </div>
+        ) : <span style={{ color:"var(--text-muted)", fontSize:12 }}>—</span>}
+      </td>
+      <td>
+        <span style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:700, background:`${pc}18`, color:pc }}>
+          {m.priorityScore} · {priorityLabel(m.priorityScore)}
+        </span>
+      </td>
+      <td>
+        <div style={{ display:"flex", gap:5 }}>
+          <button onClick={onUpdate} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:11, cursor:"pointer" }}>Update</button>
+          <button onClick={onEdit} style={{ padding:"4px 9px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
+          <button onClick={onDelete} style={{ padding:"4px 7px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
+        </div>
+      </td>
+    </tr>
   );
 }
