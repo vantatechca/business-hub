@@ -148,22 +148,30 @@ function DeptCardBody({
 }) {
   return (
     <Card>
-      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
         {dragHandle}
         <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
-          <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.description ?? ""}</div>
+          <div style={{ fontSize:11, color:"var(--text-secondary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.description ?? ""}</div>
         </div>
-        <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${healthColor(d.health ?? 0)}1a`, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div>
       </div>
-      <div style={{ display:"flex", gap:20, marginBottom:10 }}>
-        <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount ?? 0}</div></div>
-        <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div></div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:2 }}>
+        <Stat label="MEMBERS" value={d.memberCount ?? 0} />
+        <Stat label="TASKS"   value={(d as unknown as { taskCount?: number }).taskCount ?? 0} />
+        <Stat label="METRICS" value={d.metricCount ?? 0} />
       </div>
-      <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} />
       {actions}
     </Card>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div style={{ textAlign:"center", padding:"8px 4px", borderRadius:8, background:"var(--bg-input)" }}>
+      <div style={{ fontSize:9, fontWeight:800, color:"var(--text-muted)", letterSpacing:".08em" }}>{label}</div>
+      <div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)", marginTop:2 }}>{value}</div>
+    </div>
   );
 }
 

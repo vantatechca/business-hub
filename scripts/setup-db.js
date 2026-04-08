@@ -144,6 +144,10 @@ async function runAdditiveMigrations() {
     // ping assignees at T-7d / T-3d / T-0 until the metric is marked complete.
     `ALTER TABLE metrics ADD COLUMN IF NOT EXISTS due_date DATE`,
 
+    // Goals — optional free-text notes shown on the goal card and in the
+    // update modal.
+    `ALTER TABLE goals ADD COLUMN IF NOT EXISTS notes TEXT`,
+
     // Tasks
     `CREATE TABLE IF NOT EXISTS tasks (
       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

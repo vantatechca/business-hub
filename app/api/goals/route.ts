@@ -8,7 +8,7 @@ function shape(r: Record<string, unknown>): Record<string, unknown> {
 export async function GET() {
   try {
     const rows = await sql`
-      SELECT id, name, target, current, format, color, sort_order, created_at, updated_at
+      SELECT id, name, target, current, format, color, notes, sort_order, created_at, updated_at
       FROM goals ORDER BY sort_order ASC, created_at ASC
     `;
     return NextResponse.json({ data: rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]).map(shape) });
@@ -23,15 +23,16 @@ export async function POST(req: NextRequest) {
   if (!b.name) return NextResponse.json({ error: "name required" }, { status: 400 });
   try {
     const rows = await sql`
-      INSERT INTO goals (name, target, current, format, color)
+      INSERT INTO goals (name, target, current, format, color, notes)
       VALUES (
         ${b.name},
         ${Number(b.target) || 0},
         ${Number(b.current) || 0},
         ${b.format ?? "number"},
-        ${b.color ?? "#5b8ef8"}
+        ${b.color ?? "#5b8ef8"},
+        ${b.notes ?? null}
       )
-      RETURNING id, name, target, current, format, color, sort_order
+      RETURNING id, name, target, current, format, color, notes, sort_order
     `;
     return NextResponse.json({ data: shape(rows[0] as Record<string, unknown>) }, { status: 201 });
   } catch (e: unknown) {

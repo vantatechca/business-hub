@@ -8,7 +8,7 @@ import { GripVertical } from "lucide-react";
 import type { Goal } from "@/lib/types";
 
 const COLORS = ["#34d399","#5b8ef8","#a78bfa","#fbbf24","#f87171","#22d3ee","#fb923c","#6366f1","#84cc16","#e879f9"];
-const blank = { name:"", target:100, current:0, format:"number" as Goal["format"], color:COLORS[0] };
+const blank = { name:"", target:100, current:0, format:"number" as Goal["format"], color:COLORS[0], notes:"" };
 
 export default function GoalsPage() {
   const { data: session } = useSession();
@@ -20,6 +20,9 @@ export default function GoalsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
   const [deleting, setDeleting] = useState<Goal | null>(null);
+  // Dedicated "Update current value" modal — opened via the Update button on
+  // a goal card. Captures the new value + an optional notes append.
+  const [updating, setUpdating] = useState<{ goal: Goal; value: string; notes: string } | null>(null);
   const [form, setForm] = useState<typeof blank>({ ...blank });
   const { ts, toast } = useToast();
 
@@ -56,12 +59,23 @@ export default function GoalsPage() {
     await load(); toast("Goal deleted", "er");
   };
 
-  const bump = async (g: Goal) => {
-    const inc = Math.max(1, Math.round(g.target * 0.05));
-    const current = Math.min(g.target, g.current + inc);
-    await fetch(`/api/goals/${g.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ current }) });
-    setGoals(p => p.map(x => x.id === g.id ? { ...x, current } : x));
-    toast(`+${formatValue(inc, g.format)} progress`);
+  // Open the update-value modal pre-filled with the current value.
+  const openUpdate = (g: Goal) => setUpdating({ goal: g, value: String(g.current), notes: g.notes ?? "" });
+
+  // Commit the new current value + notes. Empty notes string writes null.
+  const saveUpdate = async () => {
+    if (!updating) return;
+    const v = parseFloat(updating.value);
+    if (isNaN(v)) return toast("Enter a valid number", "er");
+    const res = await fetch(`/api/goals/${updating.goal.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current: v, notes: updating.notes }),
+    });
+    if (!res.ok) return toast("Update failed", "er");
+    setGoals(p => p.map(x => x.id === updating.goal.id ? { ...x, current: v, notes: updating.notes || null } : x));
+    setUpdating(null);
+    toast(`${updating.goal.name} updated`);
   };
 
   const goalForm = (
@@ -82,6 +96,15 @@ export default function GoalsPage() {
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {COLORS.map(c => <button key={c} onClick={() => setForm(p => ({...p,color:c}))} style={{ width:26, height:26, borderRadius:"50%", background:c, cursor:"pointer", border:`3px solid ${form.color===c?"var(--text-primary)":"transparent"}` }} />)}
         </div>
+      </FormField>
+      <FormField label="Notes (optional)">
+        <textarea
+          value={form.notes}
+          onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+          placeholder="Context, milestones, whatever helps…"
+          rows={3}
+          style={{ width: "100%", background: "var(--bg-input)", border: "1px solid var(--border-card)", borderRadius: "var(--radius-md)", padding: "8px 12px", fontSize: 13, color: "var(--text-primary)", outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+        />
       </FormField>
     </div>
   );
@@ -113,8 +136,8 @@ export default function GoalsPage() {
                 key={g.id}
                 g={g}
                 dragEnabled={canReorder}
-                onBump={() => bump(g)}
-                onEdit={() => { setEditing(g); setForm({ name:g.name, target:g.target, current:g.current, format:g.format, color:g.color }); }}
+                onUpdate={() => openUpdate(g)}
+                onEdit={() => { setEditing(g); setForm({ name:g.name, target:g.target, current:g.current, format:g.format, color:g.color, notes: g.notes ?? "" }); }}
                 onDelete={() => setDeleting(g)}
               />
             ))}
@@ -135,6 +158,47 @@ export default function GoalsPage() {
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!updating}
+        onClose={() => setUpdating(null)}
+        title={`Update: ${updating?.goal.name ?? ""}`}
+        width={420}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 8 }}>
+            Current:&nbsp;
+            <strong style={{ color: "var(--text-primary)" }}>
+              {updating ? formatValue(updating.goal.current, updating.goal.format) : ""}
+            </strong>
+            &nbsp;·&nbsp;Target:&nbsp;
+            <strong style={{ color: "var(--text-primary)" }}>
+              {updating ? formatValue(updating.goal.target, updating.goal.format) : ""}
+            </strong>
+          </div>
+          <FormField label="New current value">
+            <HubInput
+              type="number"
+              value={updating?.value ?? ""}
+              onChange={e => setUpdating(p => (p ? { ...p, value: e.target.value } : null))}
+              autoFocus
+            />
+          </FormField>
+          <FormField label="Notes (optional)">
+            <textarea
+              value={updating?.notes ?? ""}
+              onChange={e => setUpdating(p => (p ? { ...p, notes: e.target.value } : null))}
+              placeholder="What changed, any context…"
+              rows={3}
+              style={{ width: "100%", background: "var(--bg-input)", border: "1px solid var(--border-card)", borderRadius: "var(--radius-md)", padding: "8px 12px", fontSize: 13, color: "var(--text-primary)", outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+            />
+          </FormField>
+        </div>
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+          <button onClick={() => setUpdating(null)} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+          <button onClick={saveUpdate} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
         </div>
       </Modal>
 
@@ -167,10 +231,15 @@ function GoalCardBody({
         </div>
       </div>
       <ProgressBar value={pct} color={g.color} height={8} />
-      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-secondary)", marginTop:8, marginBottom:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-secondary)", marginTop:8, marginBottom:g.notes ? 8 : 12 }}>
         <span>Current: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.current, g.format)}</strong></span>
         <span>Target: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.target, g.format)}</strong></span>
       </div>
+      {g.notes && (
+        <div style={{ fontSize:11, color:"var(--text-secondary)", padding:"8px 10px", borderRadius:7, background:"var(--bg-input)", marginBottom:12, lineHeight:1.5, whiteSpace:"pre-wrap" }}>
+          {g.notes}
+        </div>
+      )}
       {actions}
     </Card>
   );
@@ -179,23 +248,21 @@ function GoalCardBody({
 function GoalCard({
   g,
   dragEnabled,
-  onBump,
+  onUpdate,
   onEdit,
   onDelete,
 }: {
   g: Goal;
   dragEnabled: boolean;
-  onBump: () => void;
+  onUpdate: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const { setNodeRef, style, listeners, attributes } = useSortableItem(g.id);
-  const pct = Math.min(100, (g.current / Math.max(g.target, 1)) * 100);
-  const done = pct >= 100;
   const handle = dragEnabled ? <DragHandle listeners={listeners} attributes={attributes} /> : undefined;
   const actions = (
     <div style={{ display:"flex", gap:7 }}>
-      {!done && <button onClick={onBump} style={{ flex:1, padding:"5px 8px", borderRadius:7, border:`1px solid ${g.color}44`, background:`${g.color}11`, color:g.color, fontSize:11, fontWeight:700, cursor:"pointer" }}>+5% Progress</button>}
+      <button onClick={onUpdate} style={{ flex:1, padding:"5px 8px", borderRadius:7, border:`1px solid ${g.color}44`, background:`${g.color}11`, color:g.color, fontSize:11, fontWeight:700, cursor:"pointer" }}>Update</button>
       <button onClick={onEdit} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)" }}>Edit</button>
       <button onClick={onDelete} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer", background:"var(--danger-bg)", color:"var(--danger)", borderColor:"rgba(220,38,38,.3)", border:"1px solid rgba(220,38,38,.3)" }}>✕</button>
     </div>

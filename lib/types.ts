@@ -191,6 +191,7 @@ export interface Goal {
   current: number;
   format: "number" | "currency" | "percent";
   color: string;
+  notes?: string | null;
   sortOrder?: number;
 }
 export interface RevenueEntry {

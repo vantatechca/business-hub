@@ -7,8 +7,9 @@ import {
   Avatar, Card, ProgressBar, Modal, FormField, HubInput, HubSelect,
   ConfirmModal, useToast, ToastList, healthColor, Badge, EmptyState,
 } from "@/components/ui/shared";
-import type { Department, Task, TeamMember } from "@/lib/types";
-import { formatTaskDueDate, isTaskDueTodayOrPast, PRIORITY_OPTIONS, priorityToOption } from "@/lib/types";
+import type { Department, Task, TeamMember, Metric, RevenueEntry, ExpenseEntry } from "@/lib/types";
+import { formatTaskDueDate, isTaskDueTodayOrPast, PRIORITY_OPTIONS, priorityToOption, priorityLabel, priorityColor, formatMetricValue } from "@/lib/types";
+import { formatValue } from "@/components/ui/shared";
 import { ArrowLeft, X, Pencil, Plus, Loader2 } from "lucide-react";
 
 const PR: Record<string, { l: string; bg: string; c: string }> = {
@@ -45,8 +46,13 @@ export default function DepartmentDetailPage() {
   const [dept, setDept] = useState<Department | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [revenue, setRevenue] = useState<RevenueEntry[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  // Active tab — changes which section renders below the department header.
+  const [tab, setTab] = useState<"tasks" | "metrics" | "team" | "expenses" | "revenue">("tasks");
   const { ts, toast } = useToast();
 
   // Task CRUD state
@@ -74,12 +80,18 @@ export default function DepartmentDetailPage() {
       fetch(`/api/departments/${deptId}`).then(r => r.json()),
       fetch("/api/tasks").then(r => r.json()),
       fetch("/api/team").then(r => r.json()),
+      fetch("/api/metrics").then(r => r.json()),
+      fetch("/api/revenue").then(r => r.json()),
+      fetch("/api/expenses").then(r => r.json()),
     ])
-      .then(([d, t, m]) => {
+      .then(([d, t, m, met, rev, exp]) => {
         if (d.error || !d.data) { setNotFound(true); setLoading(false); return; }
         setDept(d.data);
         setTasks(t.data ?? []);
         setTeam(m.data ?? []);
+        setMetrics(met.data ?? []);
+        setRevenue(rev.data ?? []);
+        setExpenses(exp.data ?? []);
         setLoading(false);
       })
       .catch(() => { setLoading(false); toast("Failed to load", "er"); });
@@ -87,10 +99,28 @@ export default function DepartmentDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Filter tasks for THIS department by name (string match works for both
-  // seed numeric ids and DB UUIDs since seed tasks store departmentName too).
-  const myTasks = dept
-    ? tasks.filter(t => (t.departmentName ?? "") === dept.name || String(t.departmentId) === String(dept.id))
+  // Filter tasks / metrics / revenue / expenses / team for THIS department.
+  // We match on either id or name so entries tagged with slug-shaped ids or
+  // legacy numeric ids still show up.
+  const matchesDept = (entity: { departmentId?: string | number | null; departmentName?: string | null }) =>
+    !!dept && (
+      String(entity.departmentId ?? "") === String(dept.id)
+      || (entity.departmentName ?? "") === dept.name
+    );
+
+  const myTasks    = dept ? tasks.filter(matchesDept) : [];
+  const myMetrics  = dept ? metrics.filter(matchesDept) : [];
+  const myRevenue  = dept ? revenue.filter(matchesDept) : [];
+  const myExpenses = dept ? expenses.filter(matchesDept) : [];
+
+  // Team scoped to this department. Leaders sort first so the "team lead"
+  // appears on top; members are sorted alphabetically after.
+  const roleOrder: Record<string, number> = { admin: 0, leader: 1, member: 2 };
+  const myTeam = dept
+    ? team
+        .filter(m => String((m as unknown as { departmentId?: string }).departmentId ?? "") === String(dept.id)
+          || (m.departmentName ?? "") === dept.name)
+        .sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9) || a.name.localeCompare(b.name))
     : [];
 
   // ── Task CRUD ──────────────────────────────────────
@@ -413,10 +443,9 @@ export default function DepartmentDetailPage() {
               <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3 }}>{dept.description}</div>
             )}
             <div style={{ display: "flex", gap: 18, marginTop: 8, fontSize: 11, color: "var(--text-secondary)" }}>
-              <span>👥 <strong style={{ color: "var(--text-primary)" }}>{dept.memberCount ?? 0}</strong> members</span>
-              <span>📊 <strong style={{ color: healthColor(dept.health ?? 0) }}>{dept.health ?? 0}%</strong> health</span>
-              <span>⚡ <strong style={{ color: "var(--text-primary)" }}>{dept.priorityScore}</strong> priority</span>
+              <span>👥 <strong style={{ color: "var(--text-primary)" }}>{myTeam.length}</strong> member{myTeam.length === 1 ? "" : "s"}</span>
               <span>📋 <strong style={{ color: "var(--text-primary)" }}>{myTasks.length}</strong> task{myTasks.length === 1 ? "" : "s"}</span>
+              <span>📊 <strong style={{ color: "var(--text-primary)" }}>{myMetrics.length}</strong> metric{myMetrics.length === 1 ? "" : "s"}</span>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -428,13 +457,43 @@ export default function DepartmentDetailPage() {
             </button>
           </div>
         </div>
-        <div style={{ marginTop: 12 }}>
-          <ProgressBar value={dept.health ?? 0} color={healthColor(dept.health ?? 0)} />
-        </div>
       </Card>
 
+      {/* Tab bar — switches which section renders below the header. */}
+      <div style={{ display: "flex", gap: 4, marginTop: 14, marginBottom: 11, borderBottom: "1px solid var(--border-divider)" }}>
+        {([
+          ["tasks",    `Tasks (${myTasks.length})`],
+          ["metrics",  `Metrics (${myMetrics.length})`],
+          ["team",     `Team (${myTeam.length})`],
+          ["expenses", `Expenses (${myExpenses.length})`],
+          ["revenue",  `Revenue (${myRevenue.length})`],
+        ] as const).map(([key, label]) => {
+          const active = tab === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              style={{
+                padding: "9px 16px",
+                border: "none",
+                background: "transparent",
+                color: active ? "var(--accent)" : "var(--text-secondary)",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
+                marginBottom: -1,
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "tasks" && (<>
       {/* Tasks header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, marginBottom: 11 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>Tasks</div>
         <button
           onClick={() => openAddTask("todo")}
@@ -506,6 +565,23 @@ export default function DepartmentDetailPage() {
           );
         })}
       </div>
+      </>)}
+
+      {tab === "metrics" && (
+        <DeptMetricsTab metrics={myMetrics} departmentName={dept.name} />
+      )}
+
+      {tab === "team" && (
+        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} />
+      )}
+
+      {tab === "expenses" && (
+        <DeptExpensesTab entries={myExpenses} departmentId={String(dept.id)} departmentName={dept.name} onReload={load} toast={toast} />
+      )}
+
+      {tab === "revenue" && (
+        <DeptRevenueTab entries={myRevenue} departmentId={String(dept.id)} departmentName={dept.name} onReload={load} toast={toast} />
+      )}
 
       {/* Add task modal */}
       <Modal open={showAddTask} onClose={() => setShowAddTask(false)} title={`Add Task · ${dept.name}`}>
@@ -588,5 +664,324 @@ export default function DepartmentDetailPage() {
         entity="department"
       />
     </AppLayout>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Tab sub-components. These render compact lists scoped to the current
+// department and link to the full-page editor for non-trivial CRUD, so
+// a department's tab is primarily a "what's here" view plus quick adds.
+// All writes go through the same /api/* endpoints as the global pages,
+// so changes reflect everywhere automatically.
+// ────────────────────────────────────────────────────────────
+
+function DeptMetricsTab({ metrics, departmentName }: { metrics: Metric[]; departmentName: string }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>
+          Metrics in {departmentName}
+        </div>
+        <Link
+          href="/metrics"
+          style={{ padding: "6px 12px", borderRadius: 8, background: "var(--accent)", color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 700 }}
+        >
+          + Manage on Metrics page →
+        </Link>
+      </div>
+      {metrics.length === 0 ? (
+        <EmptyState icon="📊" title="No metrics for this department" desc="Add one from the Metrics page — it'll appear here." />
+      ) : (
+        <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
+          <table className="hub-table">
+            <thead>
+              <tr>{["Metric", "Type", "Current", "Target", "Priority"].map(h => <th key={h}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {metrics.map(m => {
+                const pc = priorityColor(m.priorityScore);
+                return (
+                  <tr key={m.id}>
+                    <td>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{m.name}</div>
+                      {m.notes && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{m.notes.slice(0, 60)}</div>}
+                    </td>
+                    <td style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                      {m.metricType === "value" ? "Total" : m.metricType}
+                    </td>
+                    <td style={{ fontSize: 13, fontWeight: 800, color: "var(--accent)" }}>
+                      {formatMetricValue(m.currentValue, m.unit)}
+                    </td>
+                    <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      {m.targetValue != null ? formatMetricValue(m.targetValue, m.unit) : "—"}
+                    </td>
+                    <td>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${pc}18`, color: pc }}>
+                        {priorityLabel(m.priorityScore)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeptTeamTab({
+  team,
+  departmentName,
+  onAddMember,
+}: {
+  team: TeamMember[];
+  departmentId: string;
+  departmentName: string;
+  onAddMember: () => void;
+}) {
+  const roleColor: Record<string, string> = { admin: "var(--violet)", leader: "var(--warning)", member: "var(--accent)" };
+  const statusColor: Record<string, string> = { active: "var(--success)", away: "var(--warning)", busy: "var(--danger)", offline: "var(--text-muted)" };
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>
+          {departmentName} · {team.length} member{team.length === 1 ? "" : "s"}
+        </div>
+        <button
+          onClick={onAddMember}
+          style={{ padding: "6px 12px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+        >
+          <Plus size={12} /> Add Member
+        </button>
+      </div>
+      {team.length === 0 ? (
+        <EmptyState icon="👥" title="No members yet" desc="Add members so they appear here and across the app." />
+      ) : (
+        <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
+          <table className="hub-table">
+            <thead>
+              <tr>{["Member", "Role", "Status", "Birthday"].map(h => <th key={h}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {team.map((m, i) => (
+                <tr key={m.id}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                      <Avatar s={m.initials} size={30} />
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
+                          {m.name}
+                          {i === 0 && m.role === "leader" && (
+                            <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 4, background: "var(--warning-bg)", color: "var(--warning)", letterSpacing: ".06em", textTransform: "uppercase" }}>
+                              Team Lead
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{m.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, fontWeight: 700, textTransform: "capitalize", background: `${roleColor[m.role]}18`, color: roleColor[m.role] }}>
+                      {m.role}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor[m.status] }} />
+                      <span style={{ fontSize: 11, color: statusColor[m.status], fontWeight: 600, textTransform: "capitalize" }}>{m.status}</span>
+                    </div>
+                  </td>
+                  <td style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                    {m.birthday ? new Date(m.birthday + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeptExpensesTab({
+  entries,
+  departmentId,
+  departmentName,
+  onReload,
+  toast,
+}: {
+  entries: ExpenseEntry[];
+  departmentId: string;
+  departmentName: string;
+  onReload: () => void;
+  toast: (msg: string, type?: "ok" | "er" | "wa") => void;
+}) {
+  return (
+    <FinanceTab
+      kind="expenses"
+      entries={entries}
+      departmentId={departmentId}
+      departmentName={departmentName}
+      onReload={onReload}
+      toast={toast}
+      accent="var(--danger)"
+      title={`Expenses in ${departmentName}`}
+    />
+  );
+}
+
+function DeptRevenueTab({
+  entries,
+  departmentId,
+  departmentName,
+  onReload,
+  toast,
+}: {
+  entries: RevenueEntry[];
+  departmentId: string;
+  departmentName: string;
+  onReload: () => void;
+  toast: (msg: string, type?: "ok" | "er" | "wa") => void;
+}) {
+  return (
+    <FinanceTab
+      kind="revenue"
+      entries={entries}
+      departmentId={departmentId}
+      departmentName={departmentName}
+      onReload={onReload}
+      toast={toast}
+      accent="var(--success)"
+      title={`Revenue in ${departmentName}`}
+    />
+  );
+}
+
+const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function FinanceTab({
+  kind,
+  entries,
+  departmentId,
+  departmentName,
+  onReload,
+  toast,
+  accent,
+  title,
+}: {
+  kind: "revenue" | "expenses";
+  entries: (RevenueEntry | ExpenseEntry)[];
+  departmentId: string;
+  departmentName: string;
+  onReload: () => void;
+  toast: (msg: string, type?: "ok" | "er" | "wa") => void;
+  accent: string;
+  title: string;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({
+    amount: 0,
+    description: "",
+    month: MONTHS_SHORT[new Date().getMonth()],
+    year: new Date().getFullYear(),
+  });
+
+  const endpoint = kind === "revenue" ? "/api/revenue" : "/api/expenses";
+
+  const save = async () => {
+    if (!form.amount || !form.description) return toast("Amount and description required", "er");
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...form,
+        departmentId,
+        departmentName,
+      }),
+    });
+    if (!res.ok) return toast("Failed to add", "er");
+    setShowAdd(false);
+    setForm({ amount: 0, description: "", month: MONTHS_SHORT[new Date().getMonth()], year: new Date().getFullYear() });
+    onReload();
+    toast("Entry added");
+  };
+
+  const del = async (id: string | number) => {
+    await fetch(`${endpoint}/${id}`, { method: "DELETE" });
+    onReload();
+    toast("Entry deleted", "er");
+  };
+
+  const total = entries.reduce((a, e) => a + e.amount, 0);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>
+          {title} · <span style={{ color: accent }}>{formatValue(total, "currency")}</span>
+        </div>
+        <button
+          onClick={() => setShowAdd(true)}
+          style={{ padding: "6px 12px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+        >
+          <Plus size={12} /> Add Entry
+        </button>
+      </div>
+      {entries.length === 0 ? (
+        <EmptyState icon={kind === "revenue" ? "💰" : "💸"} title={`No ${kind} entries yet`} desc="Add your first entry to start tracking." />
+      ) : (
+        <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
+          <table className="hub-table">
+            <thead>
+              <tr>{["Month", "Description", "Amount", ""].map(h => <th key={h}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {entries.map(e => (
+                <tr key={e.id}>
+                  <td style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{e.month} {e.year}</td>
+                  <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{e.description}</td>
+                  <td style={{ fontSize: 13, fontWeight: 700, color: accent }}>{formatValue(e.amount, "currency")}</td>
+                  <td>
+                    <button
+                      onClick={() => del(e.id)}
+                      style={{ padding: "3px 8px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, cursor: "pointer" }}
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={`Add ${kind === "revenue" ? "Revenue" : "Expense"} · ${departmentName}`}>
+        <FormField label="Amount ($)">
+          <HubInput type="number" value={form.amount || ""} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} placeholder="50000" />
+        </FormField>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Month">
+            <HubSelect value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))}>
+              {MONTHS_SHORT.map(m => <option key={m} value={m}>{m}</option>)}
+            </HubSelect>
+          </FormField>
+          <FormField label="Year">
+            <HubInput type="number" value={form.year} onChange={e => setForm(p => ({ ...p, year: +e.target.value }))} />
+          </FormField>
+        </div>
+        <FormField label="Description">
+          <HubInput value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Brief description…" />
+        </FormField>
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 4 }}>
+          <button onClick={() => setShowAdd(false)} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+          <button onClick={save} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Add</button>
+        </div>
+      </Modal>
+    </div>
   );
 }
