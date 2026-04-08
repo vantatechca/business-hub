@@ -353,8 +353,12 @@ export default function UsersPage() {
         open={!!resetting}
         onClose={() => setResetting(null)}
         onConfirm={resetPassword}
-        name={`${resetting?.name}'s password`}
-        entity="password reset (a new temporary password will be generated)"
+        name={resetting?.name ?? ""}
+        title="Reset Password"
+        confirmLabel="Reset"
+        message={
+          <>Generate a new temporary password for <strong style={{ color: "var(--text-primary)" }}>{resetting?.name}</strong>? The password is shown once and they&apos;ll be forced to change it on next login.</>
+        }
       />
 
       <ProfileDrawer

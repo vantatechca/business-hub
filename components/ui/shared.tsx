@@ -88,8 +88,40 @@ export function Modal({ open, onClose, title, width=480, children }: { open:bool
   return <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal-panel" style={{width}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:"1px solid var(--border-divider)"}}><div style={{fontSize:14,fontWeight:800,color:"var(--text-primary)"}}>{title}</div><button onClick={onClose} style={{background:"transparent",border:"none",color:"var(--text-secondary)",fontSize:20,cursor:"pointer",lineHeight:1,display:"flex"}}><X size={16}/></button></div><div style={{padding:"18px 20px"}}>{children}</div></div></div>;
 }
 
-export function ConfirmModal({ open, onClose, onConfirm, name, entity="item" }: { open:boolean; onClose:()=>void; onConfirm:()=>void; name:string; entity?:string }) {
-  return <Modal open={open} onClose={onClose} title="Confirm Delete" width={420}><p style={{fontSize:13,color:"var(--text-secondary)",marginBottom:20,lineHeight:1.6}}>Are you sure you want to delete <strong style={{color:"var(--text-primary)"}}>{name}</strong>? This {entity} will be permanently removed.</p><div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><button onClick={onClose} className={btnSecondaryCls} style={{background:"var(--bg-input)",border:"1px solid var(--border-card)",color:"var(--text-primary)"}}>Cancel</button><button onClick={()=>{onConfirm();onClose();}} className={btnDangerCls} style={{background:"var(--danger-bg)",color:"var(--danger)",border:"1px solid rgba(220,38,38,.3)"}}>Delete</button></div></Modal>;
+export function ConfirmModal({
+  open,
+  onClose,
+  onConfirm,
+  name,
+  entity = "item",
+  // Optional overrides for non-delete confirms (e.g. password reset). Default
+  // copy is the destructive "Delete" wording so existing call sites are
+  // unchanged.
+  title = "Confirm Delete",
+  message,
+  confirmLabel = "Delete",
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  name: string;
+  entity?: string;
+  title?: string;
+  message?: React.ReactNode;
+  confirmLabel?: string;
+}) {
+  const body = message ?? (
+    <>Are you sure you want to delete <strong style={{ color: "var(--text-primary)" }}>{name}</strong>? This {entity} will be permanently removed.</>
+  );
+  return (
+    <Modal open={open} onClose={onClose} title={title} width={420}>
+      <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.6 }}>{body}</p>
+      <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+        <button onClick={onClose} className={btnSecondaryCls} style={{ background: "var(--bg-input)", border: "1px solid var(--border-card)", color: "var(--text-primary)" }}>Cancel</button>
+        <button onClick={() => { onConfirm(); onClose(); }} className={btnDangerCls} style={{ background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid rgba(220,38,38,.3)" }}>{confirmLabel}</button>
+      </div>
+    </Modal>
+  );
 }
 
 // ── TOAST ─────────────────────────────────────────────────────
