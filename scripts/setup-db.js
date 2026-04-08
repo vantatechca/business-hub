@@ -44,12 +44,24 @@ async function run() {
   const migrate = fs.readFileSync(path.join(__dirname, "migrate.sql"), "utf8");
   const seed    = fs.readFileSync(path.join(__dirname, "seed.sql"), "utf8");
 
-  // Split SQL into individual statements
+  // Split SQL into individual statements.
+  //
+  // Previous bug: this filter used `!s.startsWith("--")` which dropped ANY
+  // chunk whose first non-empty line was a comment. Most statements in
+  // migrate.sql and seed.sql have a leading "-- ── SECTION ──" header, so
+  // the CREATE TABLE that followed got silently skipped. The fix is to
+  // strip comment-only lines from each chunk, not to filter the whole chunk.
   const split = (sqlText) =>
     sqlText
       .split(/;\s*\n/)
-      .map(s => s.trim())
-      .filter(s => s.length > 5 && !s.startsWith("--"));
+      .map(chunk =>
+        chunk
+          .split("\n")
+          .filter(line => !line.trim().startsWith("--"))
+          .join("\n")
+          .trim()
+      )
+      .filter(s => s.length > 5);
 
   console.log("📐  Running migrations...");
   const migrateStmts = split(migrate);
