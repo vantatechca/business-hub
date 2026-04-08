@@ -69,17 +69,31 @@ export function Sortable<T extends { id: string | number }>({
 /**
  * Use inside a Sortable container. Provides ref + style for the draggable element
  * and a drag handle component.
+ *
+ * The dragged item visibly "lifts": stronger shadow, slight scale, raised z-index.
+ * Note: scale + box-shadow only render on block-level elements; for table rows the
+ * shadow is dropped by browsers but the lifted z-index still applies. Use
+ * DragOverlay for table rows if you need a true lifted preview.
  */
 export function useSortableItem(id: string | number) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: String(id),
   });
+  // Compose dnd-kit's translate with our scale so the lifted item enlarges
+  // while still following the cursor.
+  const baseTransform = CSS.Transform.toString(transform);
+  const liftedTransform = baseTransform
+    ? `${baseTransform} scale(1.04)`
+    : "scale(1.04)";
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transform: isDragging ? liftedTransform : baseTransform,
+    transition: isDragging ? "none" : transition,
+    zIndex: isDragging ? 100 : undefined,
+    boxShadow: isDragging
+      ? "0 18px 40px rgba(0,0,0,0.45), 0 6px 14px rgba(0,0,0,0.30)"
+      : undefined,
+    cursor: isDragging ? "grabbing" : undefined,
     position: "relative",
-    zIndex: isDragging ? 10 : undefined,
   };
   return { setNodeRef, style, attributes, listeners, isDragging };
 }

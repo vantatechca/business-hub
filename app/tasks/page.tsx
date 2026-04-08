@@ -7,6 +7,8 @@ import type { Task, Department } from "@/lib/types";
 import {
   DndContext,
   DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
   PointerSensor,
   closestCorners,
   useSensor,
@@ -44,8 +46,10 @@ export default function TasksPage() {
   const [q, setQ]           = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm]     = useState<typeof blank>({ ...blank });
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const { ts, toast }       = useToast();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const activeTask = activeDragId ? tasks.find(t => String(t.id) === activeDragId) ?? null : null;
 
   const load = () => Promise.all([
     fetch("/api/tasks").then(r => r.json()),
@@ -90,7 +94,12 @@ export default function TasksPage() {
     return t ? t.status : null;
   };
 
+  const handleDragStart = (e: DragStartEvent) => {
+    setActiveDragId(String(e.active.id));
+  };
+
   const handleDragEnd = async (e: DragEndEvent) => {
+    setActiveDragId(null);
     const { active, over } = e;
     if (!over) return;
     const fromCol = findColumn(active.id);
@@ -148,7 +157,13 @@ export default function TasksPage() {
           {[0,1,2].map(i => <div key={i} className="skeleton" style={{ height:300, borderRadius:12 }} />)}
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={canReorder ? handleDragEnd : undefined}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={canReorder ? handleDragStart : undefined}
+          onDragEnd={canReorder ? handleDragEnd : undefined}
+          onDragCancel={() => setActiveDragId(null)}
+        >
           <div style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
             {COLS.map(col => {
               const items = ft.filter(t => t.status === col.key);
@@ -165,6 +180,9 @@ export default function TasksPage() {
               );
             })}
           </div>
+          <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.9, 0.3, 1)" }}>
+            {activeTask ? <TaskCardPreview t={activeTask} /> : null}
+          </DragOverlay>
         </DndContext>
       )}
 
@@ -235,6 +253,41 @@ function KanbanColumn({
   );
 }
 
+function TaskCardBody({
+  t,
+  dragHandle,
+  onAdvance,
+  onDelete,
+}: {
+  t: Task;
+  dragHandle?: React.ReactNode;
+  onAdvance?: () => void;
+  onDelete?: () => void;
+}) {
+  const pr = PR[t.priority];
+  return (
+    <div style={{ padding:13 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:9 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          {dragHandle}
+          <Badge bg={pr.bg} color={pr.c}>{pr.l}</Badge>
+        </div>
+        <Avatar s={t.assigneeInitials ?? "?"} size={24} />
+      </div>
+      <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", marginBottom:7, lineHeight:1.4 }}>{t.title}</div>
+      <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:10 }}>
+        {t.departmentName} · <span style={{ color:t.dueDate==="Today"?"var(--danger)":"var(--text-secondary)" }}>⏱ {t.dueDate}</span>
+      </div>
+      {onAdvance && onDelete && (
+        <div style={{ display:"flex", gap:6 }}>
+          <button onClick={onAdvance} style={{ flex:1, padding:"5px 7px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>{NL[t.status]}</button>
+          <button onClick={onDelete} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskCard({
   t,
   dragEnabled,
@@ -247,35 +300,45 @@ function TaskCard({
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: String(t.id), disabled: !dragEnabled });
+  // While dragging, visually empty the original slot and let the DragOverlay
+  // clone be the only visible thing the user is moving.
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.25 : 1,
+    visibility: isDragging ? "hidden" : "visible",
   };
-  const pr = PR[t.priority];
+  const handle = dragEnabled ? (
+    <button
+      {...attributes}
+      {...listeners}
+      aria-label="Drag"
+      style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"grab", padding:0, touchAction:"none", display:"flex" }}
+      onClick={e => e.stopPropagation()}
+    >
+      <GripVertical size={14} />
+    </button>
+  ) : undefined;
   return (
     <div ref={setNodeRef} style={style} className="hub-card">
-      <div style={{ padding:13 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:9 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            {dragEnabled && (
-              <button {...attributes} {...listeners} aria-label="Drag" style={{ background:"transparent", border:"none", color:"var(--text-muted)", cursor:"grab", padding:0, touchAction:"none", display:"flex" }} onClick={e => e.stopPropagation()}>
-                <GripVertical size={14} />
-              </button>
-            )}
-            <Badge bg={pr.bg} color={pr.c}>{pr.l}</Badge>
-          </div>
-          <Avatar s={t.assigneeInitials ?? "?"} size={24} />
-        </div>
-        <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", marginBottom:7, lineHeight:1.4 }}>{t.title}</div>
-        <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:10 }}>
-          {t.departmentName} · <span style={{ color:t.dueDate==="Today"?"var(--danger)":"var(--text-secondary)" }}>⏱ {t.dueDate}</span>
-        </div>
-        <div style={{ display:"flex", gap:6 }}>
-          <button onClick={onAdvance} style={{ flex:1, padding:"5px 7px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>{NL[t.status]}</button>
-          <button onClick={onDelete} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
-        </div>
-      </div>
+      <TaskCardBody t={t} dragHandle={handle} onAdvance={onAdvance} onDelete={onDelete} />
+    </div>
+  );
+}
+
+// Used inside DragOverlay — a non-sortable lifted clone of the dragged card.
+function TaskCardPreview({ t }: { t: Task }) {
+  return (
+    <div
+      className="hub-card"
+      style={{
+        cursor: "grabbing",
+        transform: "scale(1.04) rotate(1.5deg)",
+        boxShadow: "0 22px 50px rgba(0,0,0,0.55), 0 8px 18px rgba(0,0,0,0.35)",
+        borderColor: "var(--accent)",
+      }}
+    >
+      <TaskCardBody t={t} dragHandle={<GripVertical size={14} style={{ color: "var(--text-muted)" }} />} />
     </div>
   );
 }

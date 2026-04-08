@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import AppLayout from "@/components/Layout";
 import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, healthColor, useToast, ToastList, EmptyState } from "@/components/ui/shared";
 import { Sortable, useSortableItem, DragHandle } from "@/components/ui/Sortable";
@@ -140,29 +141,34 @@ function DeptCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const router = useRouter();
   const { setNodeRef, style, listeners, attributes } = useSortableItem(d.id);
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  const goToDetail = () => router.push(`/departments/${d.id}`);
   return (
     <div ref={dragEnabled ? setNodeRef : undefined} style={dragEnabled ? style : undefined}>
-      <Card>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-          {dragEnabled && <DragHandle listeners={listeners} attributes={attributes} />}
-          <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
-            <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.description ?? ""}</div>
+      <div onClick={goToDetail} style={{ cursor: "pointer" }}>
+        <Card className="hub-card-hover">
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+            {dragEnabled && <span onClick={stop}><DragHandle listeners={listeners} attributes={attributes} /></span>}
+            <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
+              <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.description ?? ""}</div>
+            </div>
+            <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${healthColor(d.health ?? 0)}1a`, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div>
           </div>
-          <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${healthColor(d.health ?? 0)}1a`, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div>
-        </div>
-        <div style={{ display:"flex", gap:20, marginBottom:10 }}>
-          <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount ?? 0}</div></div>
-          <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div></div>
-        </div>
-        <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} />
-        <div style={{ display:"flex", gap:8, marginTop:12 }}>
-          <button onClick={onEdit} style={{ flex:1, padding:"6px 12px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Edit</button>
-          <button onClick={onDelete} style={{ padding:"6px 12px", borderRadius:8, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:12, fontWeight:700, cursor:"pointer" }}>Delete</button>
-        </div>
-      </Card>
+          <div style={{ display:"flex", gap:20, marginBottom:10 }}>
+            <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount ?? 0}</div></div>
+            <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div></div>
+          </div>
+          <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} />
+          <div style={{ display:"flex", gap:8, marginTop:12 }} onClick={stop}>
+            <button onClick={onEdit} style={{ flex:1, padding:"6px 12px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Edit</button>
+            <button onClick={onDelete} style={{ padding:"6px 12px", borderRadius:8, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:12, fontWeight:700, cursor:"pointer" }}>Delete</button>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
