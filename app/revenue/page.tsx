@@ -5,7 +5,7 @@ import { Modal, FormField, HubInput, HubSelect, useToast, ToastList, EmptyState,
 import type { RevenueEntry, Department } from "@/lib/types";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const blank = { amount:0, departmentId:0, departmentName:"", description:"", month:MONTHS[new Date().getMonth()], year:new Date().getFullYear() };
+const blank = { amount:0, departmentId: "" as string | number, departmentName:"", description:"", month:MONTHS[new Date().getMonth()], year:new Date().getFullYear() };
 
 export default function RevenuePage() {
   const [entries, setEntries] = useState<RevenueEntry[]>([]);
@@ -25,9 +25,9 @@ export default function RevenuePage() {
   const total   = entries.reduce((a, e) => a + e.amount, 0);
   const thisM   = entries.filter(e => e.month === MONTHS[new Date().getMonth()]).reduce((a, e) => a + e.amount, 0);
 
-  const selectDept = (id: number) => {
-    const d = depts.find(d => d.id === id);
-    setForm(p => ({ ...p, departmentId:id, departmentName: d?.name ?? "" }));
+  const selectDept = (id: string | number) => {
+    const d = depts.find(d => String(d.id) === String(id));
+    setForm(p => ({ ...p, departmentId: id as number, departmentName: d?.name ?? "" }));
   };
 
   const save = async () => {
@@ -36,13 +36,13 @@ export default function RevenuePage() {
     await load(); setShowAdd(false); toast("Revenue entry added");
   };
 
-  const del = async (id: number) => {
+  const del = async (id: string | number) => {
     await fetch(`/api/revenue/${id}`, { method:"DELETE" });
-    setEntries(p => p.filter(e => e.id !== id));
+    setEntries(p => p.filter(e => String(e.id) !== String(id)));
     toast("Entry deleted", "er");
   };
 
-  const openAdd = () => { setForm({ ...blank, departmentId: depts[0]?.id ?? 0, departmentName: depts[0]?.name ?? "" }); setShowAdd(true); };
+  const openAdd = () => { setForm({ ...blank, departmentId: String(depts[0]?.id ?? ""), departmentName: depts[0]?.name ?? "" }); setShowAdd(true); };
 
   // Monthly chart
   const byMonth = MONTHS.map(m => entries.filter(e => e.month === m).reduce((a, e) => a + e.amount, 0));

@@ -18,7 +18,7 @@ const COLS = [
   { key:"done",        label:"Done",        color:"var(--success)" },
 ];
 const PRIORITIES = ["urgent","high","medium","low"];
-const blank = { title:"", priority:"medium", status:"todo", departmentId:0, departmentName:"", assigneeInitials:"", dueDate:"Today" };
+const blank = { title:"", priority:"medium", status:"todo", departmentId: "" as string | number, departmentName:"", assigneeInitials:"", dueDate:"Today" };
 
 export default function TasksPage() {
   const [tasks, setTasks]   = useState<Task[]>([]);
@@ -40,7 +40,7 @@ export default function TasksPage() {
 
   const openAdd = (status = "todo") => {
     setDefStatus(status);
-    setForm({ ...blank, status, departmentId: depts[0]?.id ?? 0, departmentName: depts[0]?.name ?? "" });
+    setForm({ ...blank, status, departmentId: String(depts[0]?.id ?? ""), departmentName: depts[0]?.name ?? "" });
     setShowAdd(true);
   };
 
@@ -53,18 +53,18 @@ export default function TasksPage() {
   const advance = async (t: Task) => {
     const status = NS[t.status] as Task["status"];
     await fetch(`/api/tasks/${t.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ status }) });
-    setTasks(p => p.map(x => x.id === t.id ? { ...x, status } : x));
+    setTasks(p => p.map(x => String(x.id) === String(t.id) ? { ...x, status } : x));
   };
 
-  const del = async (id: number) => {
+  const del = async (id: string | number) => {
     await fetch(`/api/tasks/${id}`, { method:"DELETE" });
     setTasks(p => p.filter(t => t.id !== id));
     toast("Task deleted", "er");
   };
 
-  const selectDept = (id: number) => {
-    const d = depts.find(d => d.id === id);
-    setForm(p => ({ ...p, departmentId:id, departmentName: d?.name ?? "" }));
+  const selectDept = (id: string | number) => {
+    const d = depts.find(d => String(d.id) === String(id));
+    setForm(p => ({ ...p, departmentId: id as number, departmentName: d?.name ?? "" }));
   };
 
   return (

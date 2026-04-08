@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/Layout";
-import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, getHealthColor, useToast, ToastList, EmptyState } from "@/components/ui/shared";
+import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, healthColor, useToast, ToastList, EmptyState } from "@/components/ui/shared";
 import type { Department } from "@/lib/types";
 
 const ICONS = ["💼","⚙️","📣","📊","👥","🔧","🎯","⭐","⚖️","🏗️","🌐","💡","🔬","📦","🎨","🧬","🚀","💰","📱","🎓"];
@@ -22,7 +22,7 @@ export default function DepartmentsPage() {
   useEffect(() => { load(); }, []);
 
   const openAdd = () => { setForm(blank); setShowAdd(true); };
-  const openEdit = (d: Department) => { setEditing(d); setForm({ name:d.name, head:d.head, icon:d.icon, color:d.color, health:d.health, memberCount:d.memberCount }); };
+  const openEdit = (d: Department) => { setEditing(d); setForm({ name:d.name, head:d.description ?? "", icon:d.icon, color:d.color, health:d.health ?? 0, memberCount:d.memberCount ?? 0 }); };
 
   const save = async () => {
     if (!form.name || !form.head) return toast("Name and head are required", "er");
@@ -86,15 +86,15 @@ export default function DepartmentsPage() {
                 <div style={{ width:38, height:38, borderRadius:10, background:`${d.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{d.icon}</div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
-                  <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.head}</div>
+                  <div style={{ fontSize:11, color:"var(--text-secondary)" }}>{d.description ?? ""}</div>
                 </div>
-                <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${getHealthColor(d.health)}1a`, color:getHealthColor(d.health) }}>{d.health}%</div>
+                <div style={{ padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700, background:`${healthColor(d.health ?? 0)}1a`, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div>
               </div>
               <div style={{ display:"flex", gap:20, marginBottom:10 }}>
-                <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount}</div></div>
-                <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:getHealthColor(d.health) }}>{d.health}%</div></div>
+                <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>MEMBERS</div><div style={{ fontSize:18, fontWeight:800, color:"var(--text-primary)" }}>{d.memberCount ?? 0}</div></div>
+                <div><div style={{ fontSize:9, color:"var(--text-muted)", marginBottom:2, letterSpacing:".08em" }}>HEALTH</div><div style={{ fontSize:18, fontWeight:800, color:healthColor(d.health ?? 0) }}>{d.health ?? 0}%</div></div>
               </div>
-              <ProgressBar value={d.health} color={getHealthColor(d.health)} />
+              <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} />
               <div style={{ display:"flex", gap:8, marginTop:12 }}>
                 <button onClick={() => openEdit(d)} style={{ flex:1, padding:"6px 12px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Edit</button>
                 <button onClick={() => setDeleting(d)} style={{ padding:"6px 12px", borderRadius:8, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:12, fontWeight:700, cursor:"pointer" }}>Delete</button>

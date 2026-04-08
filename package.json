@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:push": "node scripts/init-db.js"
+    "db:push": "node scripts/init-db.js",
+    "setup": "node scripts/setup-db.js",
+    "db:migrate": "node -e \"const {neon}=require(\"@neondatabase/serverless\");require(\"fs\").readFileSync(\"scripts/migrate.sql\",\"utf8\")\"",
+    "db:setup": "node scripts/setup-db.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.9.3",

@@ -33,12 +33,12 @@ export default function TeamPage() {
     (!df || m.departmentName === df)
   );
 
-  const openAdd = () => { setForm({ ...blank, departmentId: depts[0]?.id ?? 0, departmentName: depts[0]?.name ?? "" }); setShowAdd(true); };
+  const openAdd = () => { setForm({ ...blank, departmentId: Number(depts[0]?.id) ?? 0, departmentName: depts[0]?.name ?? "" }); setShowAdd(true); };
   const openEdit = (m: TeamMember) => { setEditing(m); setForm({ name:m.name, role:m.role, departmentId:m.departmentId, departmentName:m.departmentName ?? "", status:m.status, birthday:m.birthday ?? "" }); };
 
-  const selectDept = (id: number) => {
-    const d = depts.find(d => d.id === id);
-    setForm(p => ({ ...p, departmentId:id, departmentName: d?.name ?? "" }));
+  const selectDept = (id: string | number) => {
+    const d = depts.find(d => Number(d.id) === id);
+    setForm(p => ({ ...p, departmentId: id as number, departmentName: d?.name ?? "" }));
   };
 
   const save = async () => {
@@ -61,7 +61,7 @@ export default function TeamPage() {
 
   const toggleCI = async (m: TeamMember) => {
     await fetch(`/api/team/${m.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ checkedInToday: !m.checkedInToday }) });
-    setTeam(p => p.map(x => x.id === m.id ? { ...x, checkedInToday: !x.checkedInToday } : x));
+    setTeam(p => p.map(x => String(x.id) === String(m.id) ? { ...x, checkedInToday: !x.checkedInToday } : x));
     toast(m.checkedInToday ? "Check-in removed" : "Checked in ✓");
   };
 

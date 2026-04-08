@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/Layout";
-import { Card, ProgressBar, Sparkline, formatValue, getHealthColor } from "@/components/ui/shared";
+import { Card, ProgressBar, Sparkline, formatValue, healthColor } from "@/components/ui/shared";
 import type { Department, TeamMember, Task, RevenueEntry, ExpenseEntry } from "@/lib/types";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -31,7 +31,7 @@ export default function AnalyticsPage() {
   const tExp  = exp.reduce((a,e)=>a+e.amount,0);
   const net   = tRev - tExp;
   const margin = Math.round(net / Math.max(tRev,1) * 100);
-  const avgH  = depts.length ? Math.round(depts.reduce((a,d)=>a+d.health,0)/depts.length) : 0;
+  const avgH  = depts.length ? Math.round(depts.reduce((a,d)=>a+(d.health??0),0)/depts.length) : 0;
   const done  = tasks.filter(t=>t.status==="done").length;
   const ciRate = team.length ? Math.round(team.filter(m=>m.checkedInToday).length/team.length*100) : 0;
 
@@ -46,7 +46,7 @@ export default function AnalyticsPage() {
   const cw = byMonth.length ? 540/byMonth.length : 0;
 
   // Dept by most members
-  const sortedDepts = [...depts].sort((a,b) => b.health - a.health);
+  const sortedDepts = [...depts].sort((a,b) => (b.health??0) - (a.health??0));
 
   // Task distribution
   const tStatus = [
@@ -133,8 +133,8 @@ export default function AnalyticsPage() {
                 <div key={d.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
                   <div style={{ fontSize:11, color:"var(--text-muted)", width:16, textAlign:"right", flexShrink:0 }}>#{i+1}</div>
                   <div style={{ fontSize:12, color:"var(--text-primary)", width:100, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
-                  <ProgressBar value={d.health} color={getHealthColor(d.health)} height={6} />
-                  <div style={{ fontSize:11, fontWeight:700, color:getHealthColor(d.health), width:32, textAlign:"right", flexShrink:0 }}>{d.health}%</div>
+                  <ProgressBar value={d.health ?? 0} color={healthColor(d.health ?? 0)} height={6} />
+                  <div style={{ fontSize:11, fontWeight:700, color:healthColor(d.health ?? 0), width:32, textAlign:"right", flexShrink:0 }}>{d.health ?? 0}%</div>
                 </div>
               ))}
             </div>

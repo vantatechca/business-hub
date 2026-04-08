@@ -18,9 +18,7 @@ export function formatValue(v: number, f: "number"|"currency"|"percent"): string
 export function pctChange(cur: number, prev: number) {
   return { value: Math.abs((cur-prev)/Math.max(prev,1)*100).toFixed(1), up: cur>=prev };
 }
-export function getHealthColor(h: number) {
-  return h>=90?"var(--success)":h>=75?"var(--warning)":"var(--danger)";
-}
+// healthColor is exported from lib/types
 export function avatarBg(s: string) {
   return `hsl(${s.split("").reduce((a,c)=>a+c.charCodeAt(0),0)*47%360},50%,40%)`;
 }
@@ -112,3 +110,8 @@ export function ToastList({ ts }: { ts:Toast[] }) {
 export function EmptyState({ icon="📭", title, desc, action }: { icon?:string; title:string; desc?:string; action?:React.ReactNode }) {
   return <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"48px 0",textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>{icon}</div><div style={{fontSize:14,fontWeight:700,color:"var(--text-primary)",marginBottom:6}}>{title}</div>{desc&&<div style={{fontSize:12,color:"var(--text-secondary)",marginBottom:16,maxWidth:280}}>{desc}</div>}{action}</div>;
 }
+
+// ── RE-EXPORTS from lib/types (so pages can import from one place) ───
+
+// ── RE-EXPORTS from lib/types (for convenience) ─────────────────────────────
+export { priorityColor, priorityLabel, formatMetricValue, getInitials, metricDelta, healthColor } from "@/lib/types";
