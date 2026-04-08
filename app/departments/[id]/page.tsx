@@ -7,7 +7,7 @@ import {
   Avatar, Card, ProgressBar, Modal, FormField, HubInput, HubSelect,
   ConfirmModal, useToast, ToastList, healthColor, Badge, EmptyState,
 } from "@/components/ui/shared";
-import type { Department, Task, TeamMember, Metric, RevenueEntry, ExpenseEntry } from "@/lib/types";
+import type { Department, Task, TeamMember, Metric, RevenueEntry, ExpenseEntry, MetricAssignment } from "@/lib/types";
 import { formatTaskDueDate, isTaskDueTodayOrPast, PRIORITY_OPTIONS, priorityToOption, priorityLabel, priorityColor, formatMetricValue } from "@/lib/types";
 import { formatValue } from "@/components/ui/shared";
 import DueAlertBanner from "@/components/DueAlertBanner";
@@ -37,7 +37,10 @@ const blankTask = {
   id: undefined as string | undefined,
   title: "", priority: "medium", status: "todo",
   departmentId: "" as number | string, departmentName: "",
-  assigneeInitials: "", dueDate: todayIso(),
+  assigneeId: "" as string,
+  assigneeInitials: "",
+  assigneeName: "",
+  dueDate: todayIso(),
 };
 const blankMember = { userId: "", role: "member" as "admin" | "leader" | "member" };
 
@@ -50,6 +53,7 @@ export default function DepartmentDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [assignments, setAssignments] = useState<MetricAssignment[]>([]);
   const [revenue, setRevenue] = useState<RevenueEntry[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,8 +90,9 @@ export default function DepartmentDetailPage() {
       fetch("/api/metrics").then(r => r.json()),
       fetch("/api/revenue").then(r => r.json()),
       fetch("/api/expenses").then(r => r.json()),
+      fetch("/api/assignments").then(r => r.json()).catch(() => ({ data: [] })),
     ])
-      .then(([d, t, m, met, rev, exp]) => {
+      .then(([d, t, m, met, rev, exp, asn]) => {
         if (d.error || !d.data) { setNotFound(true); setLoading(false); return; }
         setDept(d.data);
         setTasks(t.data ?? []);
@@ -95,6 +100,7 @@ export default function DepartmentDetailPage() {
         setMetrics(met.data ?? []);
         setRevenue(rev.data ?? []);
         setExpenses(exp.data ?? []);
+        setAssignments(asn.data ?? []);
         setLoading(false);
       })
       .catch(() => { setLoading(false); toast("Failed to load", "er"); });
@@ -170,6 +176,22 @@ export default function DepartmentDetailPage() {
     toast(`${picked?.name ?? "Member"} assigned to ${dept.name}`);
   };
 
+  // Unassign a member from THIS department. We don't deactivate or delete the
+  // user — just null out their department_id so they go back to the global
+  // pool and can be reassigned later from /team.
+  const removeMember = async (m: TeamMember) => {
+    if (!dept) return;
+    const res = await fetch(`/api/team/${m.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ departmentId: null }),
+    });
+    if (!res.ok) return toast("Failed to remove member", "er");
+    const teamRes = await fetch("/api/team").then(r => r.json());
+    setTeam(teamRes.data ?? []);
+    toast(`${m.name} removed from ${dept.name}`);
+  };
+
   // When a user is picked in the dropdown, default the role dropdown to
   // their CURRENT role so the admin doesn't accidentally downgrade them.
   const pickMemberForAssign = (userId: string) => {
@@ -181,12 +203,22 @@ export default function DepartmentDetailPage() {
     }));
   };
 
-  const selectMemberInTaskForm = (initials: string) => {
-    if (initials === "__add_new__") {
+  const selectMemberInTaskForm = (userId: string) => {
+    if (userId === "__add_new__") {
       openAddMember();
       return;
     }
-    setTaskForm(p => ({ ...p, assigneeInitials: initials }));
+    if (!userId) {
+      setTaskForm(p => ({ ...p, assigneeId: "", assigneeInitials: "", assigneeName: "" }));
+      return;
+    }
+    const picked = team.find(m => String(m.id) === userId);
+    setTaskForm(p => ({
+      ...p,
+      assigneeId: userId,
+      assigneeInitials: picked?.initials ?? "",
+      assigneeName: picked?.name ?? "",
+    }));
   };
   const openEditTask = (t: Task) => {
     setEditingTask(t);
@@ -197,13 +229,15 @@ export default function DepartmentDetailPage() {
       status: t.status,
       departmentId: t.departmentId ?? 0,
       departmentName: t.departmentName ?? "",
+      assigneeId: (t.assigneeId ?? "") as string,
       assigneeInitials: t.assigneeInitials ?? "",
+      assigneeName: t.assigneeName ?? "",
       dueDate: t.dueDate ?? "",
     });
   };
 
   const saveTask = async () => {
-    if (!taskForm.title || !taskForm.assigneeInitials) {
+    if (!taskForm.title || !taskForm.assigneeId) {
       return toast("Title and assignee required", "er");
     }
     await fetch("/api/tasks", {
@@ -218,7 +252,7 @@ export default function DepartmentDetailPage() {
 
   const updateTask = async () => {
     if (!editingTask) return;
-    if (!taskForm.title || !taskForm.assigneeInitials) {
+    if (!taskForm.title || !taskForm.assigneeId) {
       return toast("Title and assignee required", "er");
     }
     const res = await fetch(`/api/tasks/${editingTask.id}`, {
@@ -315,12 +349,12 @@ export default function DepartmentDetailPage() {
       </FormField>
       <FormField label="Assignee">
         <HubSelect
-          value={taskForm.assigneeInitials}
+          value={taskForm.assigneeId}
           onChange={e => selectMemberInTaskForm(e.target.value)}
         >
           <option value="">— Unassigned —</option>
           {team.map(m => (
-            <option key={m.id} value={m.initials}>
+            <option key={m.id} value={String(m.id)}>
               {m.name} ({m.initials}){m.departmentName ? ` · ${m.departmentName}` : ""}
             </option>
           ))}
@@ -591,7 +625,9 @@ export default function DepartmentDetailPage() {
                     <div key={t.id} className="hub-card" style={{ padding: 13 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 9 }}>
                         <Badge bg={pr.bg} color={pr.c}>{pr.l}</Badge>
-                        <Avatar s={t.assigneeInitials ?? "?"} size={24} />
+                        <span title={t.assigneeName || t.assigneeInitials || "Unassigned"} style={{ display: "inline-flex" }}>
+                          <Avatar s={t.assigneeInitials ?? "?"} size={24} />
+                        </span>
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginBottom: 7, lineHeight: 1.4 }}>{t.title}</div>
                       <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 10 }}>
@@ -634,11 +670,11 @@ export default function DepartmentDetailPage() {
       </>)}
 
       {tab === "metrics" && (
-        <DeptMetricsTab metrics={myMetrics} departmentName={dept.name} />
+        <DeptMetricsTab metrics={myMetrics} assignments={assignments} departmentName={dept.name} />
       )}
 
       {tab === "team" && (
-        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} />
+        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} onRemoveMember={removeMember} />
       )}
 
       {tab === "expenses" && (
@@ -741,7 +777,14 @@ export default function DepartmentDetailPage() {
 // so changes reflect everywhere automatically.
 // ────────────────────────────────────────────────────────────
 
-function DeptMetricsTab({ metrics, departmentName }: { metrics: Metric[]; departmentName: string }) {
+function DeptMetricsTab({ metrics, assignments, departmentName }: { metrics: Metric[]; assignments: MetricAssignment[]; departmentName: string }) {
+  // Group assignments by metric id so each row can show its people.
+  const byMetric = new Map<string, MetricAssignment[]>();
+  for (const a of assignments) {
+    const key = String(a.metricId);
+    if (!byMetric.has(key)) byMetric.set(key, []);
+    byMetric.get(key)!.push(a);
+  }
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
@@ -761,11 +804,12 @@ function DeptMetricsTab({ metrics, departmentName }: { metrics: Metric[]; depart
         <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="hub-table">
             <thead>
-              <tr>{["Metric", "Type", "Current", "Target", "Priority"].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>{["Metric", "Type", "Current", "Target", "Priority", "Assignees"].map(h => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {metrics.map(m => {
                 const pc = priorityColor(m.priorityScore);
+                const mine = byMetric.get(String(m.id)) ?? [];
                 return (
                   <tr key={m.id}>
                     <td>
@@ -786,6 +830,23 @@ function DeptMetricsTab({ metrics, departmentName }: { metrics: Metric[]; depart
                         {priorityLabel(m.priorityScore)}
                       </span>
                     </td>
+                    <td>
+                      {mine.length === 0 ? (
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>—</span>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center" }}>
+                          {mine.map((a, i) => (
+                            <span
+                              key={a.id}
+                              title={a.userName ?? a.userInitials ?? "Assignee"}
+                              style={{ display: "inline-flex", marginLeft: i === 0 ? 0 : -6, border: "2px solid var(--bg-card)", borderRadius: "50%" }}
+                            >
+                              <Avatar s={a.userInitials ?? (a.userName ? a.userName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?")} size={24} />
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -801,14 +862,17 @@ function DeptTeamTab({
   team,
   departmentName,
   onAddMember,
+  onRemoveMember,
 }: {
   team: TeamMember[];
   departmentId: string;
   departmentName: string;
   onAddMember: () => void;
+  onRemoveMember: (m: TeamMember) => void;
 }) {
   const roleColor: Record<string, string> = { admin: "var(--violet)", leader: "var(--warning)", member: "var(--accent)" };
   const statusColor: Record<string, string> = { active: "var(--success)", away: "var(--warning)", busy: "var(--danger)", offline: "var(--text-muted)" };
+  const [confirming, setConfirming] = useState<TeamMember | null>(null);
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
@@ -828,10 +892,10 @@ function DeptTeamTab({
         <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="hub-table">
             <thead>
-              <tr>{["Member", "Role", "Status", "Birthday"].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>{["Member", "Role", "Status", ""].map(h => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {team.map((m, i) => (
+              {team.map(m => (
                 <tr key={m.id}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -839,7 +903,7 @@ function DeptTeamTab({
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
                           {m.name}
-                          {i === 0 && m.role === "leader" && (
+                          {m.role === "leader" && (
                             <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 4, background: "var(--warning-bg)", color: "var(--warning)", letterSpacing: ".06em", textTransform: "uppercase" }}>
                               Team Lead
                             </span>
@@ -860,8 +924,14 @@ function DeptTeamTab({
                       <span style={{ fontSize: 11, color: statusColor[m.status], fontWeight: 600, textTransform: "capitalize" }}>{m.status}</span>
                     </div>
                   </td>
-                  <td style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                    {m.birthday ? new Date(m.birthday + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}
+                  <td style={{ textAlign: "right" }}>
+                    <button
+                      onClick={() => setConfirming(m)}
+                      title="Remove from department"
+                      style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                    >
+                      Remove
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -869,6 +939,16 @@ function DeptTeamTab({
           </table>
         </div>
       )}
+      <ConfirmModal
+        open={!!confirming}
+        onClose={() => setConfirming(null)}
+        onConfirm={() => {
+          if (confirming) onRemoveMember(confirming);
+          setConfirming(null);
+        }}
+        name={confirming?.name ?? ""}
+        entity="member from this department"
+      />
     </div>
   );
 }
