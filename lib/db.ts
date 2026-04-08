@@ -17,3 +17,19 @@ export function toCamel<T = Record<string, unknown>>(row: Record<string, unknown
 export function rowsToCamel<T = Record<string, unknown>>(rows: Record<string, unknown>[]): T[] {
   return rows.map(r => toCamel<T>(r));
 }
+
+/**
+ * Convert a Postgres DATE column's returned value into a plain "YYYY-MM-DD"
+ * string. The neon serverless driver hands us a Date object for DATE columns
+ * and `String(d)` returns the long human form ("Wed Apr 08 2025 …"), so we
+ * need toISOString() instead. Handles strings, Date objects, and null.
+ */
+export function toDateString(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  if (typeof v === "string") return v.slice(0, 10);
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  // Fallback: try to construct a Date
+  const d = new Date(v as string);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, toCamel } from "@/lib/db";
+import { sql, toCamel, toDateString } from "@/lib/db";
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -31,7 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const rows = await sql`SELECT id, email, name, role, is_active, timezone, birthday FROM users WHERE id = ${params.id}`;
     if (!rows.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const row = toCamel(rows[0] as Record<string,unknown>) as Record<string, unknown>;
-    if (row.birthday) row.birthday = String(row.birthday).slice(0, 10);
+    row.birthday = toDateString(row.birthday);
     return NextResponse.json({ data: row });
   } catch(e: unknown) {
     console.error("[users/[id]/PATCH] error:", e);
