@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import AppLayout from "@/components/Layout";
 import { Modal, FormField, HubInput, HubSelect, useToast, ToastList, EmptyState } from "@/components/ui/shared";
 import type { RevenueEntry, Department } from "@/lib/types";
-import { convert, formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
+import { formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
 import { useCurrency } from "@/lib/CurrencyContext";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -18,7 +18,7 @@ const blank = {
 };
 
 export default function RevenuePage() {
-  const { currency: globalCurrency } = useCurrency();
+  const { currency: globalCurrency, convert } = useCurrency();
   // Page-level override. Starts at null (== follow global), user can switch
   // without affecting other pages.
   const [pageCurrency, setPageCurrency] = useState<Currency | null>(null);

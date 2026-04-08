@@ -11,7 +11,7 @@ import type { Department, Task, TeamMember, Metric, RevenueEntry, ExpenseEntry }
 import { formatTaskDueDate, isTaskDueTodayOrPast, PRIORITY_OPTIONS, priorityToOption, priorityLabel, priorityColor, formatMetricValue } from "@/lib/types";
 import { formatValue } from "@/components/ui/shared";
 import DueAlertBanner from "@/components/DueAlertBanner";
-import { convert, formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
+import { formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
 import { useCurrency } from "@/lib/CurrencyContext";
 import { ArrowLeft, X, Pencil, Plus, Loader2 } from "lucide-react";
 
@@ -951,7 +951,7 @@ function FinanceTab({
   // Tab display follows the global currency — no per-tab override here, so
   // flipping the header currency switcher updates the dept expense/revenue
   // tabs in real time alongside the rest of the site.
-  const { currency: displayCurrency } = useCurrency();
+  const { currency: displayCurrency, convert } = useCurrency();
 
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({
