@@ -131,29 +131,61 @@ export function isTaskDueTodayOrPast(raw: string | undefined | null): boolean {
   return d.getTime() <= today.getTime();
 }
 
-// ── LEGACY V1 COMPAT TYPES (used by old pages) ────────────────────────────────
+// ── Team / Tasks / Goals / Finance (DB-backed) ─────────────────────────
+// All of these types are UUID-id'd now that seed.ts is gone.
 export interface TeamMember {
-  id: number; name: string; initials: string; role: string;
-  departmentId: number; departmentName?: string;
+  id: string;
+  name: string;
+  email: string;
+  initials: string;
+  role: UserRole;                                    // admin | leader | member
+  jobTitle?: string;                                 // free-text title ("Senior Engineer")
+  departmentId?: string;
+  departmentName?: string;
   status: "active" | "away" | "busy" | "offline";
-  birthday?: string; checkedInToday?: boolean;
+  birthday?: string | null;
+  checkedInToday?: boolean;
+  isActive?: boolean;
+  lastLoginAt?: string | null;
+  lastCheckinAt?: string | null;
 }
 export interface Task {
-  id: number; title: string;
+  id: string;
+  title: string;
   priority: "urgent" | "high" | "medium" | "low";
   status: "todo" | "in-progress" | "done";
-  departmentId?: number; departmentName?: string;
-  assigneeId?: number; assigneeInitials?: string; dueDate?: string;
+  departmentId?: string | null;
+  departmentName?: string;
+  assigneeId?: string | null;
+  assigneeName?: string;
+  assigneeInitials?: string;
+  dueDate?: string;
+  sortOrder?: number;
 }
 export interface Goal {
-  id: number; name: string; target: number; current: number;
-  format: "number" | "currency" | "percent"; color: string;
+  id: string;
+  name: string;
+  target: number;
+  current: number;
+  format: "number" | "currency" | "percent";
+  color: string;
+  sortOrder?: number;
 }
 export interface RevenueEntry {
-  id: number; amount: number; departmentId?: number;
-  departmentName?: string; description: string; month: string; year: number;
+  id: string;
+  amount: number;
+  departmentId?: string | null;
+  departmentName?: string;
+  description: string;
+  month: string;
+  year: number;
 }
 export interface ExpenseEntry {
-  id: number; amount: number; departmentId?: number;
-  departmentName?: string; description: string; month: string; year: number;
+  id: string;
+  amount: number;
+  departmentId?: string | null;
+  departmentName?: string;
+  description: string;
+  month: string;
+  year: number;
 }

@@ -1,13 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { goals, nextId } from "@/lib/seed";
+import { sql, rowsToCamel } from "@/lib/db";
+
+function shape(r: Record<string, unknown>): Record<string, unknown> {
+  return { ...r, target: Number(r.target), current: Number(r.current) };
+}
 
 export async function GET() {
-  return NextResponse.json({ data: goals });
+  try {
+    const rows = await sql`
+      SELECT id, name, target, current, format, color, sort_order, created_at, updated_at
+      FROM goals ORDER BY sort_order ASC, created_at ASC
+    `;
+    return NextResponse.json({ data: rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]).map(shape) });
+  } catch (e: unknown) {
+    console.error("[goals/GET] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const item = { ...body, id: nextId() };
-  goals.push(item);
-  return NextResponse.json({ data: item }, { status: 201 });
+  const b = await req.json();
+  if (!b.name) return NextResponse.json({ error: "name required" }, { status: 400 });
+  try {
+    const rows = await sql`
+      INSERT INTO goals (name, target, current, format, color)
+      VALUES (
+        ${b.name},
+        ${Number(b.target) || 0},
+        ${Number(b.current) || 0},
+        ${b.format ?? "number"},
+        ${b.color ?? "#5b8ef8"}
+      )
+      RETURNING id, name, target, current, format, color, sort_order
+    `;
+    return NextResponse.json({ data: shape(rows[0] as Record<string, unknown>) }, { status: 201 });
+  } catch (e: unknown) {
+    console.error("[goals/POST] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
 }

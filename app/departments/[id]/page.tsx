@@ -30,9 +30,9 @@ const COLORS = ["#5b8ef8","#34d399","#a78bfa","#fbbf24","#f87171","#22d3ee","#84
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const blankTask = {
-  id: undefined as number | undefined,
+  id: undefined as string | undefined,
   title: "", priority: "medium", status: "todo",
-  departmentId: 0 as number | string, departmentName: "",
+  departmentId: "" as number | string, departmentName: "",
   assigneeInitials: "", dueDate: todayIso(),
 };
 const blankMember = { name: "", role: "", departmentId: "" as string | number, departmentName: "", status: "active", birthday: "" };
