@@ -61,7 +61,7 @@ export default function UsersPage() {
 
   const openEdit = (u: User) => { setEditing(u); setForm({ name:u.name, email:u.email, role:u.role, timezone:u.timezone ?? "America/Toronto", password:"" }); };
 
-  const UserForm = () => (
+  const userForm = (
     <div>
       <FormField label="Full Name"><HubInput value={form.name} onChange={e => setForm(p => ({...p, name:e.target.value}))} placeholder="First Last"/></FormField>
       <FormField label="Email"><HubInput type="email" value={form.email} onChange={e => setForm(p => ({...p, email:e.target.value}))} placeholder="user@hub.com" disabled={!!editing}/></FormField>
@@ -163,7 +163,7 @@ export default function UsersPage() {
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add User">
-        <UserForm/>
+        {userForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setShowAdd(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={save} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Add User</button>
@@ -171,7 +171,7 @@ export default function UsersPage() {
       </Modal>
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`}>
-        <UserForm/>
+        {userForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>

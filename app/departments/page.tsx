@@ -42,28 +42,24 @@ export default function DepartmentsPage() {
     await load(); toast("Department deleted", "er");
   };
 
-  const F = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <FormField label={label}>{children}</FormField>
-  );
-
-  const DeptForm = () => (
+  const deptForm = (
     <div>
-      <F label="Department Name"><HubInput value={form.name} onChange={e => setForm(p => ({...p, name:e.target.value}))} placeholder="e.g. Legal, Design…" /></F>
-      <F label="Department Head"><HubInput value={form.head} onChange={e => setForm(p => ({...p, head:e.target.value}))} placeholder="Full name" /></F>
+      <FormField label="Department Name"><HubInput value={form.name} onChange={e => setForm(p => ({...p, name:e.target.value}))} placeholder="e.g. Legal, Design…" /></FormField>
+      <FormField label="Department Head"><HubInput value={form.head} onChange={e => setForm(p => ({...p, head:e.target.value}))} placeholder="Full name" /></FormField>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-        <F label="Members"><HubInput type="number" min="1" value={form.memberCount} onChange={e => setForm(p => ({...p, memberCount:+e.target.value}))} /></F>
-        <F label="Health (%)"><HubInput type="number" min="0" max="100" value={form.health} onChange={e => setForm(p => ({...p, health:+e.target.value}))} /></F>
+        <FormField label="Members"><HubInput type="number" min="1" value={form.memberCount} onChange={e => setForm(p => ({...p, memberCount:+e.target.value}))} /></FormField>
+        <FormField label="Health (%)"><HubInput type="number" min="0" max="100" value={form.health} onChange={e => setForm(p => ({...p, health:+e.target.value}))} /></FormField>
       </div>
-      <F label="Icon">
+      <FormField label="Icon">
         <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
           {ICONS.map(ic => <button key={ic} onClick={() => setForm(p => ({...p, icon:ic}))} style={{ width:34, height:34, borderRadius:8, border:`2px solid ${form.icon===ic?"var(--accent)":"var(--border-card)"}`, background:"var(--bg-input)", fontSize:16, cursor:"pointer" }}>{ic}</button>)}
         </div>
-      </F>
-      <F label="Color">
+      </FormField>
+      <FormField label="Color">
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {COLORS.map(c => <button key={c} onClick={() => setForm(p => ({...p, color:c}))} style={{ width:26, height:26, borderRadius:"50%", background:c, cursor:"pointer", border:`3px solid ${form.color===c?"var(--text-primary)":"transparent"}` }} />)}
         </div>
-      </F>
+      </FormField>
     </div>
   );
 
@@ -105,7 +101,7 @@ export default function DepartmentsPage() {
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Department">
-        <DeptForm />
+        {deptForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setShowAdd(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={save} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Add Department</button>
@@ -113,7 +109,7 @@ export default function DepartmentsPage() {
       </Modal>
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`}>
-        <DeptForm />
+        {deptForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>

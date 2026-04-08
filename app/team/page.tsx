@@ -65,7 +65,7 @@ export default function TeamPage() {
     toast(m.checkedInToday ? "Check-in removed" : "Checked in ✓");
   };
 
-  const MemberForm = () => (
+  const memberForm = (
     <div>
       <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:14 }}>
         <Avatar s={form.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0,2) || "??"} size={44} />
@@ -157,7 +157,7 @@ export default function TeamPage() {
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Team Member">
-        <MemberForm />
+        {memberForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setShowAdd(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={save} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Add Member</button>
@@ -165,7 +165,7 @@ export default function TeamPage() {
       </Modal>
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`}>
-        <MemberForm />
+        {memberForm}
         <div style={{ display:"flex", gap:9, justifyContent:"flex-end", marginTop:4 }}>
           <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>
