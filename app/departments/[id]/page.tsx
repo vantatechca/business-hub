@@ -39,7 +39,7 @@ const blankTask = {
   departmentId: "" as number | string, departmentName: "",
   assigneeInitials: "", dueDate: todayIso(),
 };
-const blankMember = { name: "", role: "", departmentId: "" as string | number, departmentName: "", status: "active", birthday: "" };
+const blankMember = { userId: "", role: "member" as "admin" | "leader" | "member" };
 
 export default function DepartmentDetailPage() {
   const router = useRouter();
@@ -138,33 +138,47 @@ export default function DepartmentDetailPage() {
     setShowAddTask(true);
   };
 
-  // Add Member flow — opens inline modal, saves to /api/team
+  // Add Member flow — picks an EXISTING user from the global team list and
+  // assigns them to this department. New users are created on the /team page,
+  // not here. This used to POST /api/team (create), but that made it easy to
+  // accidentally duplicate people. Now we PATCH /api/team/[id] to set their
+  // department_id (+ optional role change).
   const openAddMember = () => {
     if (!dept) return;
-    setMemberForm({
-      ...blankMember,
-      departmentId: dept.id as number | string,
-      departmentName: dept.name,
-    });
+    setMemberForm({ ...blankMember });
     setShowAddMember(true);
   };
 
   const saveMember = async () => {
-    if (!memberForm.name || !memberForm.role) {
-      return toast("Name and role are required", "er");
-    }
-    const initials = memberForm.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "??";
-    const res = await fetch("/api/team", {
-      method: "POST",
+    if (!dept) return;
+    if (!memberForm.userId) return toast("Select a member to assign", "er");
+    const res = await fetch(`/api/team/${memberForm.userId}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...memberForm, initials }),
+      body: JSON.stringify({
+        departmentId: dept.id,
+        role: memberForm.role,
+      }),
     });
-    if (!res.ok) return toast("Failed to add member", "er");
+    if (!res.ok) return toast("Failed to assign member", "er");
+    // Refresh the team list so the new assignment appears on this page and
+    // everywhere else that reads users.
     const teamRes = await fetch("/api/team").then(r => r.json());
     setTeam(teamRes.data ?? []);
-    setTaskForm(p => ({ ...p, assigneeInitials: initials }));
     setShowAddMember(false);
-    toast(`${memberForm.name} added`);
+    const picked = team.find(m => String(m.id) === memberForm.userId);
+    toast(`${picked?.name ?? "Member"} assigned to ${dept.name}`);
+  };
+
+  // When a user is picked in the dropdown, default the role dropdown to
+  // their CURRENT role so the admin doesn't accidentally downgrade them.
+  const pickMemberForAssign = (userId: string) => {
+    const picked = team.find(m => String(m.id) === userId);
+    setMemberForm(p => ({
+      ...p,
+      userId,
+      role: (picked?.role as "admin" | "leader" | "member") ?? "member",
+    }));
   };
 
   const selectMemberInTaskForm = (initials: string) => {
@@ -316,16 +330,42 @@ export default function DepartmentDetailPage() {
     </>
   );
 
+  // Candidates for assignment: everyone on the team who isn't already in THIS
+  // department. Showing the already-assigned set would just be a no-op from
+  // the admin's perspective so it's cleaner to hide them.
+  const assignableMembers = team.filter(m => {
+    const alreadyHere = String((m as unknown as { departmentId?: string }).departmentId ?? "") === String(dept?.id ?? "");
+    return !alreadyHere;
+  });
+
   const memberFormJsx = (
     <>
-      <FormField label="Full Name">
-        <HubInput value={memberForm.name} onChange={e => setMemberForm(p => ({ ...p, name: e.target.value }))} placeholder="First Last" />
+      <FormField label="Member">
+        <HubSelect
+          value={memberForm.userId}
+          onChange={e => pickMemberForAssign(e.target.value)}
+        >
+          <option value="">— Select a team member —</option>
+          {assignableMembers.map(m => (
+            <option key={m.id} value={String(m.id)}>
+              {m.name} ({m.role}){m.departmentName ? ` · currently in ${m.departmentName}` : ""}
+            </option>
+          ))}
+        </HubSelect>
       </FormField>
       <FormField label="Role">
-        <HubInput value={memberForm.role} onChange={e => setMemberForm(p => ({ ...p, role: e.target.value }))} placeholder="e.g. Senior Engineer" />
+        <HubSelect
+          value={memberForm.role}
+          onChange={e => setMemberForm(p => ({ ...p, role: e.target.value as "admin" | "leader" | "member" }))}
+        >
+          <option value="admin">Admin</option>
+          <option value="leader">Leader</option>
+          <option value="member">Member</option>
+        </HubSelect>
       </FormField>
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-        Will be added to <strong style={{ color: "var(--text-primary)" }}>{dept?.name}</strong>
+        Will be assigned to <strong style={{ color: "var(--text-primary)" }}>{dept?.name}</strong>.
+        To add a brand-new person, go to the <strong style={{ color: "var(--text-primary)" }}>Team</strong> page first.
       </div>
     </>
   );
