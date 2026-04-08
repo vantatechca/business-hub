@@ -16,11 +16,11 @@ export async function GET(req: NextRequest) {
     // role='super_admin' unless the caller IS the super admin.
     const rows = role
       ? (includeSA
-          ? await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday, must_change_password FROM users WHERE role = ${role} ORDER BY name`
-          : await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday, must_change_password FROM users WHERE role = ${role} AND role != 'super_admin' ORDER BY name`)
+          ? await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday, must_change_password, requires_checkin, birthday_notifications FROM users WHERE role = ${role} ORDER BY name`
+          : await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday, must_change_password, requires_checkin, birthday_notifications FROM users WHERE role = ${role} AND role != 'super_admin' ORDER BY name`)
       : (includeSA
-          ? await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday, must_change_password FROM users ORDER BY role, name`
-          : await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday, must_change_password FROM users WHERE role != 'super_admin' ORDER BY role, name`);
+          ? await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday, must_change_password, requires_checkin, birthday_notifications FROM users ORDER BY role, name`
+          : await sql`SELECT id, email, name, role, is_active, timezone, last_login_at, last_checkin_at, created_at, birthday, must_change_password, requires_checkin, birthday_notifications FROM users WHERE role != 'super_admin' ORDER BY role, name`);
     const users = rowsToCamel<Record<string,unknown>>(rows as Record<string,unknown>[]).map(u => ({
       ...u,
       initials: getInitials(u.name as string),

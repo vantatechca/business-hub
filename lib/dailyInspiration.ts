@@ -154,6 +154,36 @@ export function pickEmoji(dateKey: string): { emoji: string; label: string } {
   return { emoji, label };
 }
 
+// Default rotation for "house" attributions when the quote has no real
+// author (Unknown / proverb). Andrei is prioritized 2:1 over Management.
+const HOUSE_ATTRIBUTIONS = ["Andrei", "Andrei", "Management"];
+
+// What to print after "a friendly reminder from …" on the dashboard hero.
+//
+// Rules:
+//   AI-generated quote (source=claude)  → "Anthropic"
+//   Real author (not Unknown / Proverb) → the author's name
+//   Unknown / proverb / fallback        → daily rotation between Andrei and
+//                                         Management (Andrei 2x more often)
+//
+// The deterministic hash of dateKey is reused so the rotation is stable for
+// a full day.
+export function attributionFor(insp: Pick<Inspiration, "author" | "source" | "dateKey">): string {
+  if (insp.source === "claude") return "Anthropic";
+  const author = (insp.author ?? "").trim();
+  if (!author) return rotatingHouse(insp.dateKey);
+  const lower = author.toLowerCase();
+  if (lower === "unknown" || lower === "anonymous" || lower.includes("proverb")) {
+    return rotatingHouse(insp.dateKey);
+  }
+  return author;
+}
+
+function rotatingHouse(dateKey: string): string {
+  const idx = hash(dateKey) % HOUSE_ATTRIBUTIONS.length;
+  return HOUSE_ATTRIBUTIONS[idx];
+}
+
 /** Build a full curated inspiration object for today (no API calls). */
 export function curatedInspiration(date: Date = new Date()): Inspiration {
   const dateKey = toDateKey(date);

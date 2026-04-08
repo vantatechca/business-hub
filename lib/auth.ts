@@ -8,6 +8,7 @@ declare module "next-auth" {
     id: string;
     role: UserRole;
     mustChangePassword?: boolean;
+    requiresCheckin?: boolean;
   }
   interface Session {
     user: {
@@ -16,6 +17,7 @@ declare module "next-auth" {
       email: string;
       role: UserRole;
       mustChangePassword?: boolean;
+      requiresCheckin?: boolean;
     };
   }
 }
@@ -24,14 +26,15 @@ declare module "next-auth/jwt" {
     id: string;
     role: UserRole;
     mustChangePassword?: boolean;
+    requiresCheckin?: boolean;
   }
 }
 
 async function findUser(email: string) {
   try {
     const { sql, toCamel } = await import("./db");
-    const rows = await sql`SELECT id, email, name, password_hash, role, is_active, must_change_password FROM users WHERE email = ${email} LIMIT 1`;
-    if (rows.length) return toCamel<{ id: string; email: string; name: string; passwordHash: string; role: UserRole; isActive: boolean; mustChangePassword: boolean }>(rows[0] as Record<string,unknown>);
+    const rows = await sql`SELECT id, email, name, password_hash, role, is_active, must_change_password, requires_checkin FROM users WHERE email = ${email} LIMIT 1`;
+    if (rows.length) return toCamel<{ id: string; email: string; name: string; passwordHash: string; role: UserRole; isActive: boolean; mustChangePassword: boolean; requiresCheckin: boolean }>(rows[0] as Record<string,unknown>);
   } catch {}
   // Demo fallback before DB is set up
   const DEMO: Record<string, { id: string; name: string; role: UserRole; pw: string }> = {
@@ -41,7 +44,7 @@ async function findUser(email: string) {
   };
   const d = DEMO[email];
   if (!d) return null;
-  return { id: d.id, email, name: d.name, passwordHash: bcrypt.hashSync(d.pw, 10), role: d.role, isActive: true, mustChangePassword: false };
+  return { id: d.id, email, name: d.name, passwordHash: bcrypt.hashSync(d.pw, 10), role: d.role, isActive: true, mustChangePassword: false, requiresCheckin: d.role === "manager" };
 }
 
 // Best-effort audit write from within NextAuth. Can't use lib/audit.ts here
@@ -109,6 +112,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           role: user.role,
           mustChangePassword: !!user.mustChangePassword,
+          requiresCheckin: !!user.requiresCheckin,
         };
       },
     }),
@@ -119,16 +123,18 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = user.role;
         token.mustChangePassword = !!user.mustChangePassword;
+        token.requiresCheckin = !!user.requiresCheckin;
       }
       // When the client calls useSession().update() after a successful
       // password change, re-read the DB flag so the redirect clears.
       if (trigger === "update" && token.id) {
         try {
           const { sql } = await import("./db");
-          const rows = await sql`SELECT must_change_password, role FROM users WHERE id = ${token.id}`;
+          const rows = await sql`SELECT must_change_password, role, requires_checkin FROM users WHERE id = ${token.id}`;
           if (rows.length) {
             token.mustChangePassword = !!rows[0].must_change_password;
             token.role = rows[0].role as UserRole;
+            token.requiresCheckin = !!rows[0].requires_checkin;
           }
         } catch {}
       }
@@ -138,6 +144,7 @@ export const authOptions: NextAuthOptions = {
       session.user.id = token.id;
       session.user.role = token.role;
       session.user.mustChangePassword = !!token.mustChangePassword;
+      session.user.requiresCheckin = !!token.requiresCheckin;
       return session;
     },
   },

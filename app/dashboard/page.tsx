@@ -12,7 +12,7 @@ import { Cake, AlertCircle, Quote } from "lucide-react";
 import { useCurrency } from "@/lib/CurrencyContext";
 import { formatMoney, type Currency } from "@/lib/currency";
 import type { Inspiration } from "@/lib/dailyInspiration";
-import { curatedInspiration } from "@/lib/dailyInspiration";
+import { curatedInspiration, attributionFor } from "@/lib/dailyInspiration";
 
 interface BdayUser { userId: string; name: string; initials: string; daysUntil: number; turningAge?: number }
 interface BdayResp { today: BdayUser[]; upcoming: BdayUser[]; recent: BdayUser[] }
@@ -169,12 +169,7 @@ export default function DashboardPage() {
                     “{inspiration.quote}”
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3 }}>
-                    — {inspiration.author}
-                    {inspiration.source === "claude" && (
-                      <span style={{ marginLeft: 8, padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: "rgba(91,142,248,.2)", color: "var(--accent)", letterSpacing: ".05em", textTransform: "uppercase" }}>
-                        AI
-                      </span>
-                    )}
+                    a friendly reminder from <strong style={{ color: "var(--text-primary)" }}>{attributionFor(inspiration)}</strong>
                   </div>
                 </div>
               </div>

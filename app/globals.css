@@ -85,5 +85,17 @@ body { background: var(--bg-base); color: var(--text-primary); font-family: -app
 .step-circle.active { background:var(--accent); color:#fff; box-shadow:0 0 0 4px var(--accent-bg); }
 .step-circle.pending{ background:var(--bg-input); color:var(--text-muted); }
 .notif-dot { width:8px; height:8px; border-radius:50%; background:var(--danger); position:absolute; top:6px; right:6px; border:2px solid var(--bg-sidebar); }
+/* Bell shake when there are unread notifications. The class is added by
+   AppLayout when unread > 0 and removed when the inbox is empty / all read.
+   Subtle 4-second cycle so it draws the eye without being annoying. */
+.bell-active { animation: bellShake 4s ease-in-out infinite; }
+@keyframes bellShake {
+  0%, 88%, 100% { transform: rotate(0deg); }
+  90%           { transform: rotate(-12deg); }
+  92%           { transform: rotate(10deg); }
+  94%           { transform: rotate(-8deg); }
+  96%           { transform: rotate(6deg); }
+  98%           { transform: rotate(-3deg); }
+}
 .progress-track { width:100%; background:rgba(128,128,128,.12); border-radius:999px; overflow:hidden; }
 .progress-fill { height:100%; border-radius:999px; transition:width .5s cubic-bezier(.4,0,.2,1); }
