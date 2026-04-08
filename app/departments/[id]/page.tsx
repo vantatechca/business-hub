@@ -8,7 +8,7 @@ import {
   ConfirmModal, useToast, ToastList, healthColor, Badge, EmptyState,
 } from "@/components/ui/shared";
 import type { Department, Task, TeamMember } from "@/lib/types";
-import { formatTaskDueDate, isTaskDueTodayOrPast } from "@/lib/types";
+import { formatTaskDueDate, isTaskDueTodayOrPast, PRIORITY_OPTIONS, priorityToOption } from "@/lib/types";
 import { ArrowLeft, X, Pencil, Plus, Loader2 } from "lucide-react";
 
 const PR: Record<string, { l: string; bg: string; c: string }> = {
@@ -313,8 +313,15 @@ export default function DepartmentDetailPage() {
           <HubInput type="number" min="0" max="100" value={deptForm.health} onChange={e => setDeptForm(p => ({ ...p, health: +e.target.value }))} />
         </FormField>
       </div>
-      <FormField label="Priority Score (1-100)">
-        <HubInput type="number" min="1" max="100" value={deptForm.priorityScore} onChange={e => setDeptForm(p => ({ ...p, priorityScore: +e.target.value }))} />
+      <FormField label="Priority">
+        <HubSelect
+          value={String(priorityToOption(deptForm.priorityScore))}
+          onChange={e => setDeptForm(p => ({ ...p, priorityScore: Number(e.target.value) }))}
+        >
+          {PRIORITY_OPTIONS.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </HubSelect>
       </FormField>
       <FormField label="Icon">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>

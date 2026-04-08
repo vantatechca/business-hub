@@ -7,12 +7,12 @@ import { Sortable, useSortableItem, DragHandle, overlayCardStyle } from "@/compo
 import { GripVertical } from "lucide-react";
 import MetricHistoryDrawer from "@/components/MetricHistoryDrawer";
 import type { Metric, Department } from "@/lib/types";
-import { metricDelta } from "@/lib/types";
+import { metricDelta, PRIORITY_OPTIONS, priorityToOption } from "@/lib/types";
 
 const TYPES = ["value","daily"];
 const DIRS  = ["higher_better","lower_better"];
 const UNITS = ["count","USD","CAD","minutes","percent","pages","accounts"];
-const blank = { departmentId:"", name:"", metricType:"value" as Metric["metricType"], direction:"higher_better" as Metric["direction"], currentValue:0, targetValue:undefined as number|undefined, unit:"count", priorityScore:50, notes:"" };
+const blank = { departmentId:"", name:"", metricType:"value" as Metric["metricType"], direction:"higher_better" as Metric["direction"], currentValue:0, targetValue:undefined as number|undefined, unit:"count", priorityScore:25, notes:"" };
 
 export default function MetricsPage() {
   const { data: session } = useSession();
@@ -128,7 +128,16 @@ export default function MetricsPage() {
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:11 }}>
         <FormField label="Current Value"><HubInput type="number" value={form.currentValue} onChange={e => setForm(p => ({...p, currentValue:+e.target.value}))}/></FormField>
         <FormField label="Target Value"><HubInput type="number" value={form.targetValue ?? ""} onChange={e => setForm(p => ({...p, targetValue:e.target.value?+e.target.value:undefined}))} placeholder="Optional"/></FormField>
-        <FormField label="Priority (1-100)"><HubInput type="number" min="1" max="100" value={form.priorityScore} onChange={e => setForm(p => ({...p, priorityScore:+e.target.value}))}/></FormField>
+        <FormField label="Priority">
+          <HubSelect
+            value={String(priorityToOption(form.priorityScore))}
+            onChange={e => setForm(p => ({ ...p, priorityScore: Number(e.target.value) }))}
+          >
+            {PRIORITY_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </HubSelect>
+        </FormField>
       </div>
       <FormField label="Notes"><HubInput value={form.notes} onChange={e => setForm(p => ({...p, notes:e.target.value}))} placeholder="Operational notes…"/></FormField>
     </div>

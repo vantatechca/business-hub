@@ -82,6 +82,27 @@ export function priorityLabel(score: number): string {
   if (score >= 50) return "Important";
   return "Standard";
 }
+
+// Canonical priority "level" <-> numeric score mapping used by the metric /
+// department forms. The backend still stores an INTEGER (1-100) so this
+// keeps existing rows working; the UI just picks one of three discrete
+// values. Any score in the "close-enough" band of an existing row round-trips
+// to the correct label via priorityLabel().
+export const PRIORITY_OPTIONS = [
+  { value: 25, label: "Standard" },
+  { value: 65, label: "Important" },
+  { value: 90, label: "Critical" },
+] as const;
+
+/** Given any numeric score, return the canonical option value that best
+ *  represents it. Used to pre-select the dropdown when editing an existing
+ *  row whose stored score might be anywhere in 1-100. */
+export function priorityToOption(score: number | undefined | null): number {
+  const n = Number(score ?? 25);
+  if (n >= 80) return 90;
+  if (n >= 50) return 65;
+  return 25;
+}
 export function healthColor(score: number): string {
   if (score >= 80) return "var(--success)";
   if (score >= 60) return "var(--warning)";
