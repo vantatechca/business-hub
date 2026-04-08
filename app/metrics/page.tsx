@@ -305,7 +305,7 @@ function MetricRow({
       </td>
       <td>
         <span style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:700, background:`${pc}18`, color:pc }}>
-          {m.priorityScore} · {priorityLabel(m.priorityScore)}
+          {priorityLabel(m.priorityScore)}
         </span>
       </td>
       <td onClick={stop}>
@@ -349,7 +349,7 @@ function MetricRowPreview({ m }: { m: Metric }) {
         {formatMetricValue(m.currentValue, m.unit)}
       </div>
       <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${pc}18`, color: pc, flexShrink: 0 }}>
-        {m.priorityScore} · {priorityLabel(m.priorityScore)}
+        {priorityLabel(m.priorityScore)}
       </span>
     </div>
   );

@@ -220,7 +220,7 @@ export default function DashboardPage() {
                         <div style={{fontSize:13,fontWeight:800,color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
                       </div>
                       <span style={{padding:"2px 8px",borderRadius:6,fontSize:10,fontWeight:800,background:`${pc}18`,color:pc,flexShrink:0}}>
-                        {d.priorityScore} · {priorityLabel(d.priorityScore)}
+                        {priorityLabel(d.priorityScore)}
                       </span>
                     </div>
                     {dMetrics.map(m=>(
