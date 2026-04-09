@@ -15,6 +15,9 @@ export default function AssignmentsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
   const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
+  // Assignment CRUD (assign / unassign) is manager+ only. Lead and member
+  // see the list but can't add or remove assignees.
+  const canEdit = canReorder;
 
   const [metrics, setMetrics]       = useState<Metric[]>([]);
   const [users, setUsers]           = useState<User[]>([]);
@@ -131,6 +134,7 @@ export default function AssignmentsPage() {
                       key={m.id}
                       m={m}
                       dragEnabled={dragEnabled}
+                      canEdit={canEdit}
                       assignees={metricAssignees(m.id)}
                       onAssign={() => { setSelected(m); setAForm({ userId: assignedUsers[0]?.id ?? "", roleInMetric:"contributor" }); setShowAssign(true); }}
                       onView={() => setViewing(m)}
@@ -239,12 +243,14 @@ function AssignmentRowBody({
 function AssignmentRow({
   m,
   dragEnabled,
+  canEdit,
   assignees,
   onAssign,
   onView,
 }: {
   m: Metric;
   dragEnabled: boolean;
+  canEdit: boolean;
   assignees: MetricAssignment[];
   onAssign: () => void;
   onView: () => void;
@@ -257,7 +263,9 @@ function AssignmentRow({
       <GripVertical size={14} />
     </span>
   ) : undefined;
-  const actions = (
+  // Members see the row but can't assign anyone — the Assign button is
+  // suppressed entirely.
+  const actions = canEdit ? (
     <span onPointerDown={e => e.stopPropagation()}>
       <button
         onClick={e => { e.stopPropagation(); onAssign(); }}
@@ -266,7 +274,7 @@ function AssignmentRow({
         + Assign
       </button>
     </span>
-  );
+  ) : undefined;
   return (
     <div
       ref={dragEnabled ? setNodeRef : undefined}

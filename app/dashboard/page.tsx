@@ -188,12 +188,6 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-            <div style={{ textAlign: "right", fontSize: 11, color: "var(--text-secondary)", flexShrink: 0 }}>
-              <div>Check-ins</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: ciStatus.rate>=80?"var(--success)":ciStatus.rate>=50?"var(--warning)":"var(--danger)", letterSpacing: "-0.03em" }}>
-                {ciStatus.rate}%
-              </div>
-            </div>
           </div>
         </div>
 

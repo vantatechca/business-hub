@@ -57,6 +57,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // Department create is manager+ only. Lead and member can see the list
+  // (filtered to their memberships) but can't add new ones.
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const b = await req.json();
   // The form sends "head" as the department description, plus an optional
   // "notes" textarea (which replaces the old health field). description and

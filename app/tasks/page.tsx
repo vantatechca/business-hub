@@ -43,6 +43,9 @@ export default function TasksPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
   const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
+  // Task CRUD (add / edit / delete / advance status) is locked to manager+.
+  // Members see tasks read-only. Same gate as canReorder for consistency.
+  const canEdit = canReorder;
 
   const [tasks, setTasks]   = useState<Task[]>([]);
   const [depts, setDepts]   = useState<Department[]>([]);
@@ -328,7 +331,7 @@ export default function TasksPage() {
   );
 
   return (
-    <AppLayout title="Tasks" onNew={() => openAdd()} newLabel="Add Task">
+    <AppLayout title="Tasks" onNew={canEdit ? () => openAdd() : undefined} newLabel="Add Task">
       <ToastList ts={ts} />
 
       <DueAlertBanner
@@ -379,6 +382,7 @@ export default function TasksPage() {
                   col={col}
                   items={items}
                   dragEnabled={canReorder}
+                  canEdit={canEdit}
                   onAdvance={advance}
                   onEdit={openEdit}
                   onDelete={del}
@@ -424,6 +428,7 @@ function KanbanColumn({
   col,
   items,
   dragEnabled,
+  canEdit,
   onAdvance,
   onEdit,
   onDelete,
@@ -432,6 +437,7 @@ function KanbanColumn({
   col: { key: string; label: string; color: string };
   items: Task[];
   dragEnabled: boolean;
+  canEdit: boolean;
   onAdvance: (t: Task) => void;
   onEdit: (t: Task) => void;
   onDelete: (id: string | number) => void;
@@ -447,10 +453,20 @@ function KanbanColumn({
       </div>
       <SortableContext items={items.map(t => String(t.id))} strategy={verticalListSortingStrategy}>
         {items.map(t => (
-          <TaskCard key={t.id} t={t} dragEnabled={dragEnabled} onAdvance={() => onAdvance(t)} onEdit={() => onEdit(t)} onDelete={() => onDelete(t.id)} />
+          <TaskCard
+            key={t.id}
+            t={t}
+            dragEnabled={dragEnabled}
+            canEdit={canEdit}
+            onAdvance={() => onAdvance(t)}
+            onEdit={() => onEdit(t)}
+            onDelete={() => onDelete(t.id)}
+          />
         ))}
       </SortableContext>
-      <button onClick={onAdd} style={{ padding:"9px", borderRadius:9, border:"1px dashed var(--border-card)", background:"transparent", color:"var(--text-muted)", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:5, cursor:"pointer" }}>+ Add task</button>
+      {canEdit && (
+        <button onClick={onAdd} style={{ padding:"9px", borderRadius:9, border:"1px dashed var(--border-card)", background:"transparent", color:"var(--text-muted)", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", gap:5, cursor:"pointer" }}>+ Add task</button>
+      )}
     </div>
   );
 }
@@ -500,12 +516,14 @@ function TaskCardBody({
 function TaskCard({
   t,
   dragEnabled,
+  canEdit,
   onAdvance,
   onEdit,
   onDelete,
 }: {
   t: Task;
   dragEnabled: boolean;
+  canEdit: boolean;
   onAdvance: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -540,7 +558,15 @@ function TaskCard({
       {...(dragEnabled ? listeners : {})}
       {...(dragEnabled ? attributes : {})}
     >
-      <TaskCardBody t={t} dragHandle={handle} onAdvance={onAdvance} onEdit={onEdit} onDelete={onDelete} />
+      {/* Members only see a read-only card — the action row is suppressed
+          entirely. Manager+ keeps the full Advance / Edit / Delete cluster. */}
+      <TaskCardBody
+        t={t}
+        dragHandle={handle}
+        onAdvance={canEdit ? onAdvance : undefined}
+        onEdit={canEdit ? onEdit : undefined}
+        onDelete={canEdit ? onDelete : undefined}
+      />
     </div>
   );
 }

@@ -31,6 +31,9 @@ export default function MetricsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
   const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
+  // Metric CRUD (add / edit / delete / quick update) is manager+ only.
+  // Lead and member see the cards but can't mutate them.
+  const canEdit = canReorder;
 
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [depts, setDepts]     = useState<Department[]>([]);
@@ -200,7 +203,7 @@ export default function MetricsPage() {
   );
 
   return (
-    <AppLayout title="Metrics" onNew={() => { setForm({...blank, departmentId: depts[0]?.id ?? ""}); setShowAdd(true); }} newLabel="Add Metric">
+    <AppLayout title="Metrics" onNew={canEdit ? () => { setForm({...blank, departmentId: depts[0]?.id ?? ""}); setShowAdd(true); } : undefined} newLabel="Add Metric">
       <ToastList ts={ts} />
 
       <DueAlertBanner
@@ -271,6 +274,7 @@ export default function MetricsPage() {
                       key={m.id}
                       m={m}
                       dragEnabled={dragEnabled}
+                      canEdit={canEdit}
                       onView={() => setViewing(m)}
                       onUpdate={() => setUpdating({ metric:m, value:String(m.currentValue) })}
                       onEdit={() => openEdit(m)}
@@ -307,6 +311,7 @@ export default function MetricsPage() {
 function MetricRow({
   m,
   dragEnabled,
+  canEdit,
   onView,
   onUpdate,
   onEdit,
@@ -314,6 +319,7 @@ function MetricRow({
 }: {
   m: Metric;
   dragEnabled: boolean;
+  canEdit: boolean;
   onView: () => void;
   onUpdate: () => void;
   onEdit: () => void;
@@ -381,15 +387,17 @@ function MetricRow({
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, textAlign: "right" }}>{pct}%</div>
           </div>
         )}
-        <div
-          style={{ display: "flex", gap: 5, flexShrink: 0 }}
-          onClick={stop}
-          onPointerDown={stopPointer}
-        >
-          <button onClick={onUpdate} style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "transparent", color: "var(--text-primary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Update</button>
-          <button onClick={onEdit} style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "transparent", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Edit</button>
-          <button onClick={onDelete} style={{ padding: "4px 7px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✕</button>
-        </div>
+        {canEdit && (
+          <div
+            style={{ display: "flex", gap: 5, flexShrink: 0 }}
+            onClick={stop}
+            onPointerDown={stopPointer}
+          >
+            <button onClick={onUpdate} style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "transparent", color: "var(--text-primary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Update</button>
+            <button onClick={onEdit} style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "transparent", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Edit</button>
+            <button onClick={onDelete} style={{ padding: "4px 7px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✕</button>
+          </div>
+        )}
       </div>
     </div>
   );

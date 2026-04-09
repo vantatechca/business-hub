@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
+import { getSessionUser, isManagerOrHigher } from "@/lib/authz";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Task edit + delete are manager+ only. Lead and member can view tasks (scoped
+// by getUserScope in GET) but can't mutate them.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const b = await req.json();
   try {
     if (b.title        !== undefined) await sql`UPDATE tasks SET title = ${b.title}, updated_at = NOW() WHERE id = ${params.id}`;
@@ -30,6 +37,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     await sql`DELETE FROM tasks WHERE id = ${params.id}`;
     return NextResponse.json({ message: "Deleted" });
