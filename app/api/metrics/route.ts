@@ -52,6 +52,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Metric create is manager+ only.
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const b = await req.json();
   try {
     const rows = await sql`

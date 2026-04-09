@@ -17,6 +17,9 @@ export default function DepartmentsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
   const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
+  // Department CRUD (add / edit / delete) is manager+ only. Lead and member
+  // see the cards but can't mutate them. Same gate as canReorder.
+  const canEdit = canReorder;
 
   const [depts, setDepts] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,7 +141,7 @@ export default function DepartmentsPage() {
   );
 
   return (
-    <AppLayout title="Departments" onNew={openAdd} newLabel="Add Department">
+    <AppLayout title="Departments" onNew={canEdit ? openAdd : undefined} newLabel="Add Department">
       <ToastList ts={ts} />
 
       {/* Search + counter row. Reordering is disabled while a search filter
@@ -172,8 +175,8 @@ export default function DepartmentsPage() {
         <EmptyState
           icon="⬡"
           title="No departments yet"
-          desc="Add your first department to get started."
-          action={<button onClick={openAdd} style={{ padding: "8px 18px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Add Department</button>}
+          desc={canEdit ? "Add your first department to get started." : "Nothing here yet."}
+          action={canEdit ? <button onClick={openAdd} style={{ padding: "8px 18px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Add Department</button> : undefined}
         />
       ) : filteredDepts.length === 0 ? (
         <EmptyState icon="🔎" title="No matches" desc={`Nothing matches "${q}". Try a different search.`} />
@@ -191,6 +194,7 @@ export default function DepartmentsPage() {
                 key={d.id}
                 d={d}
                 dragEnabled={canReorder && !q}
+                canEdit={canEdit}
                 onEdit={() => openEdit(d)}
                 onDelete={() => setDeleting(d)}
               />
@@ -317,11 +321,13 @@ function DeptCardBody({
 function DeptCard({
   d,
   dragEnabled,
+  canEdit,
   onEdit,
   onDelete,
 }: {
   d: Department;
   dragEnabled: boolean;
+  canEdit: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -413,7 +419,7 @@ function DeptCard({
       {...(dragEnabled ? attributes : {})}
       onClick={onCardClick}
     >
-      <DeptCardBody d={d} showGrip={dragEnabled} actions={actions} />
+      <DeptCardBody d={d} showGrip={dragEnabled} actions={canEdit ? actions : undefined} />
     </div>
   );
 }

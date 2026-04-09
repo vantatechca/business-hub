@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, toCamel, toDateString } from "@/lib/db";
+import { getSessionUser, isManagerOrHigher } from "@/lib/authz";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -39,6 +40,11 @@ const toStr = (v: unknown): string | null => (v == null ? null : String(v));
  *      casts; the driver coerces the string to whatever the column type is.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  // Metric edit (including quick value update) is manager+ only.
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   let b: Record<string, unknown>;
   try {
     b = await req.json();
@@ -128,6 +134,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+  // Metric delete is manager+ only.
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     await sql`DELETE FROM metrics WHERE id = ${params.id}`;
     return NextResponse.json({ message: "Deleted" });

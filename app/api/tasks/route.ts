@@ -58,6 +58,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // Task create is manager+ only. Lead and member can see tasks (with the
+  // visibility scope applied in GET) but can't add new ones.
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const b = await req.json();
   if (!b.title) return NextResponse.json({ error: "title required" }, { status: 400 });
   try {

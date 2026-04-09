@@ -42,6 +42,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Assignment create is manager+ only.
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const b = await req.json();
   if (!b.metricId || !b.userId) return NextResponse.json({ error: "metricId and userId required" }, { status: 400 });
   try {
@@ -56,6 +61,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  // Assignment remove is manager+ only.
+  const me = await getSessionUser();
+  if (!isManagerOrHigher(me?.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { metricId, userId } = await req.json();
   try {
     await sql`DELETE FROM metric_assignments WHERE metric_id = ${metricId} AND user_id = ${userId}`;
