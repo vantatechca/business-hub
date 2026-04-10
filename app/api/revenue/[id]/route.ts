@@ -12,6 +12,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (b.description  !== undefined) await sql`UPDATE revenue_entries SET description = ${b.description} WHERE id = ${params.id}`;
     if (b.month        !== undefined) await sql`UPDATE revenue_entries SET month = ${b.month} WHERE id = ${params.id}`;
     if (b.year         !== undefined) await sql`UPDATE revenue_entries SET year = ${Number(b.year) || new Date().getFullYear()} WHERE id = ${params.id}`;
+    if (b.entryDate    !== undefined) {
+      try { await sql`UPDATE revenue_entries SET entry_date = ${b.entryDate || null} WHERE id = ${params.id}`; } catch { /* column may not exist */ }
+    }
     return NextResponse.json({ message: "Updated" });
   } catch (e: unknown) {
     console.error("[revenue/[id]/PATCH] error:", e);

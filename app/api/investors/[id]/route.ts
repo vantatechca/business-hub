@@ -17,6 +17,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (b.currency         !== undefined) await sql`UPDATE investors SET currency = ${b.currency || "USD"}, updated_at = NOW() WHERE id = ${params.id}`;
     if (b.notes            !== undefined) await sql`UPDATE investors SET notes = ${b.notes || null}, updated_at = NOW() WHERE id = ${params.id}`;
     if (b.isActive         !== undefined) await sql`UPDATE investors SET is_active = ${b.isActive}, updated_at = NOW() WHERE id = ${params.id}`;
+    if (b.birthday         !== undefined) {
+      try { await sql`UPDATE investors SET birthday = ${b.birthday || null}, updated_at = NOW() WHERE id = ${params.id}`; } catch {}
+    }
+    if (b.birthdayNotifications !== undefined) {
+      try { await sql`UPDATE investors SET birthday_notifications = ${!!b.birthdayNotifications}, updated_at = NOW() WHERE id = ${params.id}`; } catch {}
+    }
     return NextResponse.json({ message: "Updated" });
   } catch (e: unknown) {
     console.error("[investors/[id]/PATCH] error:", e);

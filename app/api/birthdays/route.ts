@@ -21,6 +21,8 @@ interface BirthdayUser {
   mmdd: string;     // MM-DD
   daysUntil: number; // negative = past, 0 = today, positive = upcoming
   turningAge?: number;
+  kind: "employee" | "investor";
+  company?: string; // for investors
 }
 
 // Zero-pad helper
@@ -60,6 +62,19 @@ export async function GET() {
           ORDER BY name
         `;
     const users = rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]);
+
+    // Also load investor birthdays (if the columns exist).
+    let investors: Record<string, unknown>[] = [];
+    try {
+      const invRows = await sql`
+        SELECT id, name, birthday, company
+        FROM investors
+        WHERE is_active = TRUE AND birthday IS NOT NULL
+      `;
+      investors = rowsToCamel<Record<string, unknown>>(invRows as Record<string, unknown>[]);
+    } catch {
+      // Birthday column may not exist yet; just skip investors.
+    }
 
     // Use the viewer's timezone to determine "today" — crucial for users
     // in timezones ahead of UTC (e.g., Asia/Manila = UTC+8).
@@ -102,6 +117,27 @@ export async function GET() {
         mmdd: `${pad(bM)}-${pad(bD)}`,
         daysUntil: diff,
         turningAge: turningAge >= 0 && turningAge < 150 ? turningAge : undefined,
+        kind: "employee",
+      });
+    }
+
+    // Add investor birthdays
+    for (const inv of investors) {
+      const bdayStr = toDateString(inv.birthday);
+      if (!bdayStr || !/^\d{4}-\d{2}-\d{2}$/.test(bdayStr)) continue;
+      const [bY, bM, bD] = bdayStr.split("-").map(Number);
+      const diff = daysFromTodayToBirthday(today, bdayStr);
+      const turningAge = today.getFullYear() - bY;
+      entries.push({
+        userId: `investor-${inv.id}`,
+        name: inv.name as string,
+        initials: getInitials(inv.name as string),
+        birthday: bdayStr,
+        mmdd: `${pad(bM)}-${pad(bD)}`,
+        daysUntil: diff,
+        turningAge: turningAge >= 0 && turningAge < 150 ? turningAge : undefined,
+        kind: "investor",
+        company: inv.company as string | undefined,
       });
     }
 

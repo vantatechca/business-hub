@@ -32,6 +32,8 @@ const blank = {
   investmentAmount: 0,
   currency: "USD",
   notes: "",
+  birthday: "",
+  birthdayNotifications: false,
   createAccount: false,
 };
 
@@ -90,6 +92,8 @@ export default function InvestorsPage() {
       investmentAmount: inv.investmentAmount,
       currency: inv.currency,
       notes: inv.notes ?? "",
+      birthday: (inv as unknown as { birthday?: string }).birthday ?? "",
+      birthdayNotifications: !!(inv as unknown as { birthdayNotifications?: boolean }).birthdayNotifications,
       createAccount: false,
     });
   };
@@ -183,6 +187,26 @@ export default function InvestorsPage() {
       <FormField label="Notes">
         <HubTextarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Additional notes..." rows={3} />
       </FormField>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <FormField label="Birthday (optional)">
+          <HubInput
+            type="date"
+            value={form.birthday}
+            onChange={e => setForm(p => ({ ...p, birthday: e.target.value }))}
+          />
+        </FormField>
+        <FormField label="Birthday Notifications">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", background: "var(--bg-input)", border: "1px solid var(--border-card)", borderRadius: 8, cursor: "pointer", fontSize: 12, color: "var(--text-primary)" }}>
+            <input
+              type="checkbox"
+              checked={form.birthdayNotifications}
+              onChange={e => setForm(p => ({ ...p, birthdayNotifications: e.target.checked }))}
+              style={{ accentColor: "var(--accent)" }}
+            />
+            Notify team on their birthday
+          </label>
+        </FormField>
+      </div>
     </>
   );
 
