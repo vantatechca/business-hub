@@ -25,7 +25,7 @@ export default function AssignmentsPage() {
   const [loading, setLoading]       = useState(true);
   const [selected, setSelected]     = useState<Metric | null>(null);
   const [showAssign, setShowAssign] = useState(false);
-  const [aForm, setAForm]           = useState({ userId:"", roleInMetric:"contributor" as MetricAssignment["roleInMetric"] });
+  const [aForm, setAForm]           = useState({ userId:"", roleInMetric:"owner" as MetricAssignment["roleInMetric"] });
   const [q, setQ]                   = useState("");
   // Clicking a metric row opens the history drawer (reused from /metrics).
   const [viewing, setViewing]       = useState<Metric | null>(null);
@@ -136,7 +136,7 @@ export default function AssignmentsPage() {
                       dragEnabled={dragEnabled}
                       canEdit={canEdit}
                       assignees={metricAssignees(m.id)}
-                      onAssign={() => { setSelected(m); setAForm({ userId: assignedUsers[0]?.id ?? "", roleInMetric:"contributor" }); setShowAssign(true); }}
+                      onAssign={() => { setSelected(m); setAForm({ userId: assignedUsers[0]?.id ?? "", roleInMetric:"owner" }); setShowAssign(true); }}
                       onView={() => setViewing(m)}
                     />
                   ))}

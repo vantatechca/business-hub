@@ -161,6 +161,17 @@ export default function MetricsPage() {
     await load(); toast("Metric deleted", "er");
   };
 
+  const convertToTask = async (m: Metric, mode: "move" | "copy") => {
+    const res = await fetch(`/api/metrics/${m.id}/convert`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); return toast(e.error || "Convert failed", "er"); }
+    await load();
+    setEditing(null);
+    toast(mode === "move" ? `"${m.name}" moved to tasks` : `"${m.name}" copied as task`);
+  };
+
   const quickUpdate = async (metricId: string, newValue: number) => {
     const res = await fetch(`/api/metrics/${metricId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -531,7 +542,19 @@ export default function MetricsPage() {
         {metricForm}{actionBtns(save, () => setShowAdd(false), "Add Metric")}
       </Modal>
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit: ${editing?.name}`} width={560}>
-        {metricForm}{actionBtns(update, () => setEditing(null), "Save Changes")}
+        {metricForm}
+        <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 12, borderTop: "1px solid var(--border-divider)" }}>
+          <button
+            onClick={() => { if (editing && confirm("Copy this asset as a task? (keeps the asset)")) convertToTask(editing, "copy"); }}
+            style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid var(--accent)44", background: "var(--accent-bg)", color: "var(--accent)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+          >
+            → Copy as Task
+          </button>
+          <div style={{ display: "flex", gap: 9 }}>
+            <button onClick={() => setEditing(null)} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+            <button onClick={update} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save Changes</button>
+          </div>
+        </div>
       </Modal>
       <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={del} name={deleting?.name ?? ""} entity="metric" />
 

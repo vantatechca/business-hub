@@ -50,12 +50,32 @@ export async function POST(req: NextRequest) {
   const b = await req.json();
   if (!b.metricId || !b.userId) return NextResponse.json({ error: "metricId and userId required" }, { status: 400 });
   try {
+    const role = b.roleInMetric ?? "owner";
     const rows = await sql`
       INSERT INTO metric_assignments (metric_id, user_id, role_in_metric, assigned_by)
-      VALUES (${b.metricId}, ${b.userId}, ${b.roleInMetric ?? "contributor"}, ${b.assignedBy ?? null})
+      VALUES (${b.metricId}, ${b.userId}, ${role}, ${b.assignedBy ?? me?.id ?? null})
       ON CONFLICT (metric_id, user_id) DO UPDATE SET role_in_metric = EXCLUDED.role_in_metric
       RETURNING *
     `;
+    // Notify the assigned user
+    try {
+      const metricRows = await sql`SELECT name FROM metrics WHERE id = ${b.metricId}`;
+      const metricName = metricRows.length ? (metricRows[0] as { name: string }).name : "a metric";
+      await sql`
+        INSERT INTO notifications (user_id, type, title, body, severity, action_url, sender_id)
+        VALUES (
+          ${b.userId},
+          'metric_alert',
+          ${`You were assigned as ${role} of "${metricName}"`},
+          ${`${me?.name ?? "Admin"} assigned you as ${role} of the metric "${metricName}". Check the metrics page for details.`},
+          'info',
+          '/metrics',
+          ${me?.id ?? null}
+        )
+      `;
+    } catch (notifErr) {
+      console.warn("[assignments/POST] notification insert failed:", notifErr);
+    }
     return NextResponse.json({ data: rows[0] }, { status: 201 });
   } catch(e: unknown) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
 }

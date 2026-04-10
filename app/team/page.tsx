@@ -288,7 +288,7 @@ export default function TeamPage() {
   );
 
   return (
-    <AppLayout title="Team Members" onNew={isAdmin ? openAdd : undefined} newLabel="Add Member">
+    <AppLayout title="Employees" onNew={isAdmin ? openAdd : undefined} newLabel="Add Employee">
       <ToastList ts={ts} />
 
       {!isAdmin && (
