@@ -64,10 +64,10 @@ export default function CheckInModal({ open, onClose, onComplete, canDefer = tru
   }, []);
 
   const handleClose = useCallback(() => {
-    if (!canDefer && step < 4) return; // mandatory — block close
+    // Always allow closing — check-in enforcement happens on logout/tab close
     setTimeout(reset, 300);
     onClose();
-  }, [canDefer, step, reset, onClose]);
+  }, [step, reset, onClose]);
 
   // ── STEP 2 → 3: call AI parser ─────────────────────────────
   const parseWithAI = async () => {
@@ -112,7 +112,8 @@ export default function CheckInModal({ open, onClose, onComplete, canDefer = tru
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        userId, mood: mood?.label, moodEmoji: mood?.emoji,
+        userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        mood: mood?.label, moodEmoji: mood?.emoji,
         wins: rawResponse, rawResponse,
         aiSummary:           aiResult?.summary,
         aiExtractedMetrics:  confirmedMetrics,
@@ -185,7 +186,7 @@ export default function CheckInModal({ open, onClose, onComplete, canDefer = tru
         {/* Header */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:22 }}>
           <div style={{ fontSize:14, fontWeight:800, color:"var(--text-primary)" }}>Daily Check-In</div>
-          {canDefer && step < 4 && (
+          {step < 4 && (
             <button onClick={handleClose} style={{ background:"transparent", border:"none", color:"var(--text-secondary)", fontSize:22, cursor:"pointer", lineHeight:1, padding:0 }}>×</button>
           )}
         </div>

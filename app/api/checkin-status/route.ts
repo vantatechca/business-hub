@@ -1,10 +1,26 @@
 import { NextResponse } from "next/server";
 import { sql, rowsToCamel } from "@/lib/db";
+import { getSessionUser } from "@/lib/authz";
 
 // Returns today's check-in status for all team members.
-// Used by the dashboard "missing check-ins" count.
+// Uses the viewer's timezone to determine "today".
 export async function GET() {
-  const today = new Date().toISOString().slice(0, 10);
+  const me = await getSessionUser();
+  let userTz = "America/Toronto";
+  if (me?.id) {
+    try {
+      const tzRows = await sql`SELECT timezone FROM users WHERE id = ${me.id}`;
+      if (tzRows.length) userTz = (tzRows[0] as { timezone: string }).timezone || "America/Toronto";
+    } catch {}
+  }
+  let today: string;
+  try {
+    today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: userTz, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+  } catch {
+    today = new Date().toISOString().slice(0, 10);
+  }
   try {
     const rows = await sql`
       SELECT
