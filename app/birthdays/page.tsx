@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Card, useToast, ToastList, EmptyState } from "@/components/ui/shared";
-import { Cake, CheckCircle2, X, Loader2 } from "lucide-react";
+import { Cake, CheckCircle2, X, Loader2, Users } from "lucide-react";
 
 interface BirthdayUser {
   userId: string;
@@ -18,6 +18,7 @@ interface BirthdaysResponse {
   today: BirthdayUser[];
   upcoming: BirthdayUser[];
   recent: BirthdayUser[];
+  all: BirthdayUser[];
 }
 
 // localStorage key helpers — per user per year
@@ -34,6 +35,7 @@ function isMarked(uid: string, year: number): { greeted: boolean; dismissed: boo
 
 export default function BirthdaysPage() {
   const [data, setData] = useState<BirthdaysResponse | null>(null);
+  const [showAllDrawer, setShowAllDrawer] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0); // forces re-render after localStorage writes
   const { ts, toast } = useToast();
@@ -95,6 +97,21 @@ export default function BirthdaysPage() {
   return (
     <AppLayout title="Birthdays">
       <ToastList ts={ts} />
+
+      {/* View All button */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button
+          onClick={() => setShowAllDrawer(true)}
+          style={{
+            padding: "7px 14px", borderRadius: 8,
+            border: "1px solid var(--border-card)", background: "var(--bg-input)",
+            color: "var(--text-primary)", fontSize: 12, fontWeight: 700,
+            cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+          }}
+        >
+          <Users size={14} /> View All Birthdays ({data?.all?.length ?? 0})
+        </button>
+      </div>
 
       {loading ? (
         <div style={{ padding: 60, textAlign: "center", color: "var(--text-secondary)", fontSize: 13 }}>
@@ -219,7 +236,70 @@ export default function BirthdaysPage() {
           </Section>
         </>
       )}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      {/* All Birthdays Drawer */}
+      {showAllDrawer && (
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setShowAllDrawer(false); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 600, display: "flex", justifyContent: "flex-end" }}
+        >
+          <div style={{
+            width: 420, maxWidth: "95vw", height: "100vh",
+            background: "var(--bg-card)", borderLeft: "1px solid var(--border-card)",
+            boxShadow: "var(--shadow-modal)", overflowY: "auto",
+            animation: "slideInRight .2s ease",
+          }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-divider)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "var(--bg-card)", zIndex: 1 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>All Team Birthdays</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{data?.all?.length ?? 0} employees</div>
+              </div>
+              <button onClick={() => setShowAllDrawer(false)} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", display: "flex" }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: "12px 16px" }}>
+              {(data?.all ?? []).length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)", fontSize: 12 }}>
+                  No birthdays on record. Add birthdays on the Team or Users page.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {(data?.all ?? []).map(u => {
+                    const isToday = u.daysUntil === 0;
+                    const isPast = u.daysUntil < 0;
+                    const daysLabel = isToday ? "Today!" : isPast
+                      ? `${Math.abs(u.daysUntil)} day${Math.abs(u.daysUntil) === 1 ? "" : "s"} ago`
+                      : `In ${u.daysUntil} day${u.daysUntil === 1 ? "" : "s"}`;
+                    const accent = isToday ? "var(--accent)" : isPast ? "var(--text-muted)" : u.daysUntil <= 7 ? "var(--warning)" : "var(--text-secondary)";
+                    return (
+                      <div key={u.userId} style={{
+                        display: "flex", alignItems: "center", gap: 12,
+                        padding: "10px 14px", borderRadius: 10,
+                        background: isToday ? "var(--accent-bg)" : "var(--bg-input)",
+                        border: isToday ? "1px solid var(--accent)44" : "1px solid var(--border-card)",
+                      }}>
+                        <Avatar s={u.initials} size={36} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                            {new Date(u.birthday + "T00:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric" })}
+                            {u.turningAge != null && ` - turning ${u.turningAge}`}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: accent, flexShrink: 0, textAlign: "right" }}>
+                          {isToday && <span style={{ fontSize: 16, marginRight: 4 }}>🎉</span>}
+                          {daysLabel}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
     </AppLayout>
   );
 }

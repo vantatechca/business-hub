@@ -44,20 +44,19 @@ function daysFromTodayToBirthday(todayYmd: Date, bdayStr: string): number {
 export async function GET() {
   const me = await getSessionUser();
   try {
-    // Two filters at once:
-    //   1. birthday_notifications = TRUE — respects per-user opt-out
-    //   2. stealth: super admin is hidden from everyone except themselves
+    // Show ALL employees who have a birthday set. The birthday_notifications
+    // flag controls who RECEIVES notifications, not whose birthday is shown.
     const rows = canSeeSuperAdmin(me?.role)
       ? await sql`
           SELECT id, name, birthday, is_active
           FROM users
-          WHERE is_active = TRUE AND birthday IS NOT NULL AND birthday_notifications = TRUE
+          WHERE is_active = TRUE AND birthday IS NOT NULL
           ORDER BY name
         `
       : await sql`
           SELECT id, name, birthday, is_active
           FROM users
-          WHERE is_active = TRUE AND birthday IS NOT NULL AND birthday_notifications = TRUE AND role != 'super_admin'
+          WHERE is_active = TRUE AND birthday IS NOT NULL AND role != 'super_admin'
           ORDER BY name
         `;
     const users = rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]);
@@ -99,10 +98,19 @@ export async function GET() {
       console.log("[birthdays/GET] computed:", JSON.stringify(diagnostics));
     }
 
+    // Sort ALL entries by next upcoming birthday (closest first)
+    const allSorted = [...entries].sort((a, b) => {
+      // Normalize: past birthdays wrap to next year (+365)
+      const aDays = a.daysUntil < 0 ? a.daysUntil + 365 : a.daysUntil;
+      const bDays = b.daysUntil < 0 ? b.daysUntil + 365 : b.daysUntil;
+      return aDays - bDays;
+    });
+
     return NextResponse.json({
       today: todayList,
       upcoming: upcomingList,
       recent: recentList,
+      all: allSorted,
     });
   } catch (e: unknown) {
     console.error("[birthdays/GET] error:", e);

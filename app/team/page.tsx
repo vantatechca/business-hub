@@ -273,7 +273,7 @@ export default function TeamPage() {
               checked={form.birthdayNotifications}
               onChange={e => setForm(p => ({ ...p, birthdayNotifications: e.target.checked }))}
             />
-            Send birthday notifications when this person's birthday comes up
+            Receives birthday notifications about other team members
           </label>
         </div>
       )}
