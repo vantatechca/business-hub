@@ -26,6 +26,10 @@ const PR: Record<string,{l:string;bg:string;c:string}> = {
 
 export default function DashboardPage() {
   const { data: session } = useSession();
+  const role = (session?.user as { role?: string })?.role ?? "member";
+  const userId = (session?.user as { id?: string })?.id;
+  const isManager = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
+  const isLead = role === "lead";
   const { currency: globalCurrency, convert } = useCurrency();
 
   const [depts,   setDepts]   = useState<Department[]>([]);
@@ -97,12 +101,29 @@ export default function DashboardPage() {
 
   const today    = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 
+  // ── ROLE-BASED SCOPING ──────────────────────────────────────
+  // Metrics and departments are already scoped by the API (getUserScope).
+  // For leads/members, further filter tasks, revenue, and expenses to
+  // only show data within their scoped departments.
+  const scopedDeptIds = new Set(depts.map(d => d.id));
+  const scopedMetricIds = new Set(metrics.map(m => m.id));
+
+  const scopedTasks = isManager ? tasks
+    : isLead ? tasks.filter(t => t.departmentId && scopedDeptIds.has(t.departmentId))
+    : tasks.filter(t => t.assigneeId === userId); // members: only their tasks
+
+  const scopedRev = isManager ? rev
+    : rev.filter(r => r.departmentId && scopedDeptIds.has(r.departmentId));
+
+  const scopedExp = isManager ? exp
+    : exp.filter(e => e.departmentId && scopedDeptIds.has(e.departmentId));
+
   // Totals follow the global currency. Each entry is converted from its own
   // stored currency to the display currency so flipping the header switcher
   // updates these numbers in real time.
-  const tRev = rev.reduce((a, r) => a + convert(r.amount, ((r as { currency?: string }).currency as Currency) || "USD", globalCurrency), 0);
-  const tExp = exp.reduce((a, e) => a + convert(e.amount, ((e as { currency?: string }).currency as Currency) || "USD", globalCurrency), 0);
-  const activeTasks = tasks.filter(t=>t.status!=="done").length;
+  const tRev = scopedRev.reduce((a, r) => a + convert(r.amount, ((r as { currency?: string }).currency as Currency) || "USD", globalCurrency), 0);
+  const tExp = scopedExp.reduce((a, e) => a + convert(e.amount, ((e as { currency?: string }).currency as Currency) || "USD", globalCurrency), 0);
+  const activeTasks = scopedTasks.filter(t=>t.status!=="done").length;
 
   // Friendly first-name for the welcome message.
   const firstName = (session?.user?.name ?? "").split(" ")[0] || "there";
@@ -191,9 +212,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Top alerts — birthdays + missing check-ins */}
-        {(unreviewedBdays.length > 0 || ciStatus.missing.length > 0) && (
-          <div style={{ display: "grid", gridTemplateColumns: unreviewedBdays.length > 0 && ciStatus.missing.length > 0 ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 14 }}>
+        {/* Top alerts — birthdays + missing check-ins (manager+ only for team alerts) */}
+        {(unreviewedBdays.length > 0 || (isManager && ciStatus.missing.length > 0)) && (
+          <div style={{ display: "grid", gridTemplateColumns: unreviewedBdays.length > 0 && isManager && ciStatus.missing.length > 0 ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 14 }}>
             {unreviewedBdays.length > 0 && (
               <Link
                 href="/birthdays"
@@ -222,7 +243,7 @@ export default function DashboardPage() {
                 </span>
               </Link>
             )}
-            {ciStatus.missing.length > 0 && (
+            {isManager && ciStatus.missing.length > 0 && (
               <div
                 style={{
                   display: "flex", alignItems: "center", gap: 14,
@@ -341,7 +362,7 @@ export default function DashboardPage() {
               <a href="/tasks" style={{fontSize:11,color:"var(--accent)",textDecoration:"none"}}>View all →</a>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:7}}>
-              {tasks.filter(t=>t.status!=="done").slice(0,5).map(t=>{const pr=PR[t.priority as string]??PR.medium;return(
+              {scopedTasks.filter(t=>t.status!=="done").slice(0,5).map(t=>{const pr=PR[t.priority as string]??PR.medium;return(
                 <div key={t.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,background:"var(--bg-input)"}}>
                   <Badge bg={pr.bg} color={pr.c}>{pr.l}</Badge>
                   <div style={{flex:1,fontSize:12,color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
@@ -351,7 +372,7 @@ export default function DashboardPage() {
                   </span>
                 </div>
               );})}
-              {tasks.filter(t=>t.status!=="done").length===0&&<div style={{textAlign:"center",padding:"12px 0",fontSize:12,color:"var(--text-secondary)"}}>🎉 All tasks done!</div>}
+              {scopedTasks.filter(t=>t.status!=="done").length===0&&<div style={{textAlign:"center",padding:"12px 0",fontSize:12,color:"var(--text-secondary)"}}>🎉 All tasks done!</div>}
             </div>
           </Card>
           <Card>

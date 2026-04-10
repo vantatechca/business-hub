@@ -165,6 +165,25 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_r
 CREATE INDEX IF NOT EXISTS idx_depts_priority ON departments(priority_score DESC);
 CREATE INDEX IF NOT EXISTS idx_metrics_priority ON metrics(priority_score DESC);
 
+-- ── METRIC CONTRIBUTIONS ─────────────────────────────────────
+-- Tracks per-user, per-day contributions to metrics. When multiple
+-- employees are assigned to the same metric, their contributions
+-- are summed to produce the overall metric value.
+CREATE TABLE IF NOT EXISTS metric_contributions (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  metric_id         UUID NOT NULL REFERENCES metrics(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  checkin_id        UUID REFERENCES daily_checkins(id),
+  contribution_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  value             DECIMAL NOT NULL DEFAULT 0,
+  created_at        TIMESTAMP DEFAULT NOW(),
+  updated_at        TIMESTAMP DEFAULT NOW(),
+  UNIQUE(metric_id, user_id, contribution_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_contributions_metric_date ON metric_contributions(metric_id, contribution_date);
+CREATE INDEX IF NOT EXISTS idx_contributions_user ON metric_contributions(user_id, contribution_date);
+
 -- ────────────────────────────────────────────────────────────
 -- Additive migrations that reference departments(id) are no longer
 -- declared here. They're applied by scripts/setup-db.js AFTER this
