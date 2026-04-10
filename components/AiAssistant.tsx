@@ -1,11 +1,44 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { X, Send, Loader2, Brain, Sparkles } from "lucide-react";
+import { X, Send, Loader2, Brain, Sparkles, Bell } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+}
+
+interface ParsedAction {
+  type: "NOTIFY";
+  target: string;  // userId, ALL_MANAGERS, ALL_LEADS, ALL_ASSIGNED:metricName
+  title: string;
+  body: string;
+}
+
+/** Parse [ACTION:NOTIFY|target|title|body] from AI text. Returns the text without action lines + the actions. */
+function parseActions(text: string): { cleanText: string; actions: ParsedAction[] } {
+  const actions: ParsedAction[] = [];
+  const lines = text.split("\n");
+  const cleanLines: string[] = [];
+
+  for (const line of lines) {
+    const match = line.match(/^\[ACTION:NOTIFY\|([^|]+)\|([^|]+)\|([^\]]+)\]$/);
+    if (match) {
+      actions.push({ type: "NOTIFY", target: match[1], title: match[2], body: match[3] });
+    } else {
+      cleanLines.push(line);
+    }
+  }
+
+  return { cleanText: cleanLines.join("\n").trim(), actions };
+}
+
+/** Human-readable label for the notification target. */
+function targetLabel(target: string): string {
+  if (target === "ALL_MANAGERS") return "All Managers & Admins";
+  if (target === "ALL_LEADS") return "All Leads";
+  if (target.startsWith("ALL_ASSIGNED:")) return `Everyone assigned to "${target.slice(13)}"`;
+  return target.split("-")[0] === target ? target : "this person"; // UUID = specific user
 }
 
 /**
@@ -25,6 +58,7 @@ export default function AiAssistant() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
+  const [sentActions, setSentActions] = useState<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -97,6 +131,29 @@ export default function AiAssistant() {
       setMessages(prev => [...prev, { role: "assistant", content: "Failed to run report." }]);
     }
     setReportLoading(false);
+  };
+
+  const executeAction = async (action: ParsedAction, actionKey: string) => {
+    try {
+      const res = await fetch("/api/ai-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSentActions(prev => new Set(prev).add(actionKey));
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `Sent! ${data.data?.count ?? 1} notification${(data.data?.count ?? 1) !== 1 ? "s" : ""} delivered.`,
+        }]);
+      } else {
+        const err = await res.json();
+        setMessages(prev => [...prev, { role: "assistant", content: `Failed to send: ${err.error || "Unknown error"}` }]);
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Failed to send notification." }]);
+    }
   };
 
   if (!isManager) return null;
@@ -191,24 +248,64 @@ export default function AiAssistant() {
               </div>
             )}
 
-            {messages.map((msg, i) => (
-              <div key={i} style={{
-                alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
-                maxWidth: "85%",
-              }}>
-                <div style={{
-                  padding: "10px 14px", borderRadius: 12,
-                  background: msg.role === "user" ? "var(--accent)" : "var(--bg-input)",
-                  color: msg.role === "user" ? "#fff" : "var(--text-primary)",
-                  fontSize: 12, lineHeight: 1.6,
-                  borderBottomRightRadius: msg.role === "user" ? 4 : 12,
-                  borderBottomLeftRadius: msg.role === "assistant" ? 4 : 12,
-                  whiteSpace: "pre-wrap",
+            {messages.map((msg, i) => {
+              const isUser = msg.role === "user";
+              const { cleanText, actions } = isUser ? { cleanText: msg.content, actions: [] } : parseActions(msg.content);
+
+              return (
+                <div key={i} style={{
+                  alignSelf: isUser ? "flex-end" : "flex-start",
+                  maxWidth: "85%",
                 }}>
-                  {msg.content}
+                  <div style={{
+                    padding: "10px 14px", borderRadius: 12,
+                    background: isUser ? "var(--accent)" : "var(--bg-input)",
+                    color: isUser ? "#fff" : "var(--text-primary)",
+                    fontSize: 12, lineHeight: 1.6,
+                    borderBottomRightRadius: isUser ? 4 : 12,
+                    borderBottomLeftRadius: !isUser ? 4 : 12,
+                    whiteSpace: "pre-wrap",
+                  }}>
+                    {cleanText}
+                  </div>
+                  {/* Action buttons */}
+                  {actions.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 6 }}>
+                      {actions.map((action, ai) => {
+                        const key = `${i}-${ai}-${action.target}-${action.title}`;
+                        const sent = sentActions.has(key);
+                        return (
+                          <button
+                            key={ai}
+                            onClick={() => !sent && executeAction(action, key)}
+                            disabled={sent}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 7,
+                              padding: "8px 12px", borderRadius: 9,
+                              border: sent ? "1px solid var(--success)" : "1px solid var(--accent)",
+                              background: sent ? "var(--success-bg)" : "var(--accent-bg)",
+                              color: sent ? "var(--success)" : "var(--accent)",
+                              fontSize: 11, fontWeight: 700, cursor: sent ? "default" : "pointer",
+                              textAlign: "left", width: "100%",
+                              transition: "all .15s",
+                              opacity: sent ? 0.8 : 1,
+                            }}
+                          >
+                            <Bell size={13} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div>{sent ? "Sent!" : `Send alert: ${action.title}`}</div>
+                              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 1, opacity: 0.8 }}>
+                                To: {targetLabel(action.target)}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {loading && (
               <div style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 12, background: "var(--bg-input)" }}>
