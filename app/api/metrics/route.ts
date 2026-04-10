@@ -27,24 +27,25 @@ export async function GET(req: NextRequest) {
     const me = await getSessionUser();
     let rows;
     if (userId) {
-      // Explicit "metrics for THIS user" lookup. The /assignments page uses
-      // this; auth gating is handled there. Behave as before.
-      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id JOIN metric_assignments ma ON ma.metric_id = m.id WHERE ma.user_id = ${userId} ORDER BY m.sort_order ASC, m.priority_score DESC`;
+      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m LEFT JOIN departments d ON d.id = m.department_id JOIN metric_assignments ma ON ma.metric_id = m.id WHERE ma.user_id = ${userId} ORDER BY m.sort_order ASC, m.priority_score DESC`;
     } else if (deptId) {
-      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id WHERE m.department_id = ${deptId} ORDER BY m.sort_order ASC, m.priority_score DESC`;
+      if (deptId === "__general__") {
+        rows = await sql`SELECT m.*, NULL AS department_name, NULL AS department_color FROM metrics m WHERE m.department_id IS NULL ORDER BY m.sort_order ASC, m.priority_score DESC`;
+      } else {
+        rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m LEFT JOIN departments d ON d.id = m.department_id WHERE m.department_id = ${deptId} ORDER BY m.sort_order ASC, m.priority_score DESC`;
+      }
     } else if (!me || isManagerOrHigher(me.role)) {
-      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m JOIN departments d ON d.id = m.department_id ORDER BY d.sort_order ASC, m.sort_order ASC`;
+      rows = await sql`SELECT m.*, d.name AS department_name, d.color AS department_color FROM metrics m LEFT JOIN departments d ON d.id = m.department_id ORDER BY d.sort_order ASC NULLS LAST, m.sort_order ASC`;
     } else {
-      // Lead and member: metrics in a department they belong to (any role)
-      // OR metrics they personally have an assignment to.
       const scope = await getUserScope(me.id);
       rows = await sql`
         SELECT m.*, d.name AS department_name, d.color AS department_color
         FROM metrics m
-        JOIN departments d ON d.id = m.department_id
-        WHERE m.department_id::text = ANY(${scope.departmentIds}::text[])
+        LEFT JOIN departments d ON d.id = m.department_id
+        WHERE m.department_id IS NULL
+           OR m.department_id::text = ANY(${scope.departmentIds}::text[])
            OR m.id::text = ANY(${scope.metricIds}::text[])
-        ORDER BY d.sort_order ASC, m.sort_order ASC
+        ORDER BY d.sort_order ASC NULLS LAST, m.sort_order ASC
       `;
     }
     return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]).map(coerceMetric) });
@@ -59,9 +60,10 @@ export async function POST(req: NextRequest) {
   }
   const b = await req.json();
   try {
+    const deptId = b.departmentId && b.departmentId !== "__general__" ? b.departmentId : null;
     const rows = await sql`
       INSERT INTO metrics (department_id, name, metric_type, direction, current_value, target_value, unit, priority_score, notes, sort_order, due_date)
-      VALUES (${b.departmentId}, ${b.name}, ${b.metricType ?? "value"}, ${b.direction ?? "higher_better"}, ${b.currentValue ?? 0}, ${b.targetValue ?? null}, ${b.unit ?? "count"}, ${b.priorityScore ?? 50}, ${b.notes ?? null}, ${b.sortOrder ?? 99}, ${b.dueDate || null})
+      VALUES (${deptId}, ${b.name}, ${b.metricType ?? "value"}, ${b.direction ?? "higher_better"}, ${b.currentValue ?? 0}, ${b.targetValue ?? null}, ${b.unit ?? "count"}, ${b.priorityScore ?? 50}, ${b.notes ?? null}, ${b.sortOrder ?? 99}, ${b.dueDate || null})
       RETURNING *
     `;
     return NextResponse.json({ data: rows[0] }, { status: 201 });

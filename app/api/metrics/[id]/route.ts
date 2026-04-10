@@ -82,7 +82,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const currentValue  = "currentValue"  in b ? toNum(b.currentValue)  : undefined;
   const targetValue   = "targetValue"   in b ? toNum(b.targetValue)   : undefined;
   const priorityScore = "priorityScore" in b ? toInt(b.priorityScore) : undefined;
-  const departmentId  = "departmentId"  in b ? toStr(b.departmentId)  : undefined;
+  const rawDeptId     = "departmentId"  in b ? toStr(b.departmentId)  : undefined;
+  const departmentId  = rawDeptId === "__general__" ? null : rawDeptId;
   const sortOrder     = "sortOrder"     in b ? toInt(b.sortOrder)     : undefined;
   // dueDate: empty string / null means clear it. Anything else is YYYY-MM-DD.
   const dueDate       = "dueDate"       in b ? (b.dueDate || null)    : undefined;
@@ -127,7 +128,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (unit         != null) await sql`UPDATE metrics SET unit = ${unit}, updated_at = NOW() WHERE id = ${params.id}`;
     if (targetValue  != null) await sql`UPDATE metrics SET target_value = ${targetValue}, updated_at = NOW() WHERE id = ${params.id}`;
     if (priorityScore!= null) await sql`UPDATE metrics SET priority_score = ${priorityScore}, updated_at = NOW() WHERE id = ${params.id}`;
-    if (departmentId != null) await sql`UPDATE metrics SET department_id = ${departmentId}, updated_at = NOW() WHERE id = ${params.id}`;
+    if (departmentId !== undefined) await sql`UPDATE metrics SET department_id = ${departmentId}, updated_at = NOW() WHERE id = ${params.id}`;
     if (sortOrder    != null) await sql`UPDATE metrics SET sort_order = ${sortOrder}, updated_at = NOW() WHERE id = ${params.id}`;
     if (dueDate      !== undefined) await sql`UPDATE metrics SET due_date = ${dueDate}, updated_at = NOW() WHERE id = ${params.id}`;
 

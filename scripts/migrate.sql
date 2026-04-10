@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS departments (
 -- ── METRICS ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS metrics (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  department_id    UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  department_id    UUID REFERENCES departments(id) ON DELETE CASCADE,
   name             VARCHAR(255) NOT NULL,
   metric_type      VARCHAR(20) NOT NULL DEFAULT 'value' CHECK (metric_type IN ('value','daily','value_and_daily')),
   direction        VARCHAR(20) NOT NULL DEFAULT 'higher_better' CHECK (direction IN ('higher_better','lower_better')),
