@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
-import { getSessionUser } from "@/lib/authz";
+import { getSessionUser, isManagerOrHigher } from "@/lib/authz";
 
 /**
  * POST /api/metrics/contribute
@@ -27,6 +27,17 @@ export async function POST(req: NextRequest) {
   const { metricId, value, checkinId } = body;
   if (!metricId || value === undefined || value === null) {
     return NextResponse.json({ error: "metricId and value required" }, { status: 400 });
+  }
+
+  // Non-managers can only contribute to metrics they are assigned to.
+  // Managers+ can contribute to any metric.
+  if (!isManagerOrHigher(me.role)) {
+    const assignmentRows = await sql`
+      SELECT 1 FROM metric_assignments WHERE metric_id = ${metricId} AND user_id = ${me.id}
+    `;
+    if (!assignmentRows.length) {
+      return NextResponse.json({ error: "Forbidden — you are not assigned to this metric" }, { status: 403 });
+    }
   }
 
   try {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, toCamel } from "@/lib/db";
-import { getSessionUser, canReviewCheckins } from "@/lib/authz";
+import { getSessionUser, canReviewCheckins, isAdmin } from "@/lib/authz";
 import { logAudit } from "@/lib/audit";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -66,9 +66,27 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const isOwner = row.user_id === me.id;
     const wantsReview = body.status === "reviewed";
     const isReviewing = wantsReview && canReviewCheckins(me.role);
+    const isAdminEdit = isAdmin(me.role); // admin/super_admin can edit any check-in
 
-    if (!isOwner && !isReviewing) {
+    if (!isOwner && !isReviewing && !isAdminEdit) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Admin edit: can edit any check-in's content fields without restrictions
+    if (isAdminEdit && !isOwner && !isReviewing) {
+      if (body.rawResponse !== undefined) await sql`UPDATE daily_checkins SET raw_response = ${body.rawResponse}, updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.aiSummary   !== undefined) await sql`UPDATE daily_checkins SET ai_summary   = ${body.aiSummary},   updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.mood        !== undefined) await sql`UPDATE daily_checkins SET mood         = ${body.mood},        updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.moodEmoji   !== undefined) await sql`UPDATE daily_checkins SET mood_emoji   = ${body.moodEmoji},   updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.wins        !== undefined) await sql`UPDATE daily_checkins SET wins         = ${body.wins},        updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.blockers    !== undefined) await sql`UPDATE daily_checkins SET blockers     = ${body.blockers},    updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.status      !== undefined) await sql`UPDATE daily_checkins SET status       = ${body.status},      updated_at = NOW() WHERE id = ${params.id}`;
+      if (body.aiExtractedMetrics !== undefined) {
+        await sql`UPDATE daily_checkins SET ai_extracted_metrics = ${JSON.stringify(body.aiExtractedMetrics)}::jsonb, updated_at = NOW() WHERE id = ${params.id}`;
+      }
+      await logAudit({ action: "checkin.admin_edit", entityType: "checkin", entityId: params.id, metadata: { fields: Object.keys(body), editedBy: me.id }, req });
+      const refreshed = await sql`SELECT * FROM daily_checkins WHERE id = ${params.id}`;
+      return NextResponse.json({ data: toCamel(refreshed[0] as Record<string, unknown>) });
     }
 
     // Self-edit guard rails
