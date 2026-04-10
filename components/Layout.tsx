@@ -449,7 +449,15 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
             background: "var(--bg-card)", border: "1px solid var(--border-card)",
             borderRadius: 16, padding: "24px 28px", width: 420, maxWidth: "95vw",
             boxShadow: "var(--shadow-modal)", textAlign: "center",
+            position: "relative",
           }}>
+            <button
+              onClick={() => setShowLogoutCheckin(false)}
+              style={{ position: "absolute", top: 12, right: 12, background: "transparent", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer", lineHeight: 1 }}
+              title="Close"
+            >
+              ×
+            </button>
             <div style={{ fontSize: 40, marginBottom: 12 }}>📝</div>
             <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text-primary)", marginBottom: 6 }}>
               Check-in required before signing out

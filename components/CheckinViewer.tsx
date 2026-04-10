@@ -212,7 +212,13 @@ export default function CheckinViewer({ checkin, open, onClose, onReviewed }: Pr
     try {
       const res = await fetch(`/api/checkin/${hydrated.id}`, { method: "DELETE" });
       if (res.ok) {
-        onReviewed?.(hydrated.id); // triggers refresh in parent
+        // Clear the "checked in today" localStorage flag so the system
+        // knows the user hasn't checked in (prevents logout bypass).
+        if (isOwner && userId) {
+          const todayKey = new Date().toISOString().slice(0, 10);
+          localStorage.removeItem(`ci_done_${userId}_${todayKey}`);
+        }
+        onReviewed?.(hydrated.id);
         onClose();
       }
     } finally {

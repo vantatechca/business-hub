@@ -61,7 +61,25 @@ export async function GET() {
         `;
     const users = rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]);
 
-    const today = new Date();
+    // Use the viewer's timezone to determine "today" — crucial for users
+    // in timezones ahead of UTC (e.g., Asia/Manila = UTC+8).
+    let userTz = "America/Toronto";
+    if (me?.id) {
+      try {
+        const tzRows = await sql`SELECT timezone FROM users WHERE id = ${me.id}`;
+        if (tzRows.length) userTz = (tzRows[0] as { timezone: string }).timezone || "America/Toronto";
+      } catch {}
+    }
+    let todayStr: string;
+    try {
+      todayStr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: userTz, year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date());
+    } catch {
+      todayStr = new Date().toISOString().slice(0, 10);
+    }
+    const [tY, tM, tD] = todayStr.split("-").map(Number);
+    const today = new Date(tY, tM - 1, tD);
     today.setHours(0, 0, 0, 0);
 
     const entries: BirthdayUser[] = [];
