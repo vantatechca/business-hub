@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { sql, rowsToCamel } from "@/lib/db";
 import { getSessionUser, isManagerOrHigher, getUserScope } from "@/lib/authz";
 
@@ -88,11 +89,18 @@ export async function POST(req: NextRequest) {
       slug = `${baseSlug}-${n}`;
     }
 
+    // Generate the id in Node so we don't depend on the column having
+    // a default (some deployments have departments.id as TEXT with no
+    // default, which causes "null value violates not-null constraint").
+    const newId = randomUUID();
     const rows = await sql`
-      INSERT INTO departments (name, slug, color, icon, priority_score, google_sheet_url, description, notes, sort_order)
-      VALUES (${b.name}, ${slug}, ${b.color ?? "#5b8ef8"},
-              ${b.icon ?? "📦"}, ${b.priorityScore ?? 50}, ${b.googleSheetUrl ?? null}, ${description},
-              ${b.notes ?? null}, ${b.sortOrder ?? 99})
+      INSERT INTO departments (id, name, slug, color, icon, priority_score, google_sheet_url, description, notes, sort_order)
+      VALUES (
+        ${newId},
+        ${b.name}, ${slug}, ${b.color ?? "#5b8ef8"},
+        ${b.icon ?? "📦"}, ${b.priorityScore ?? 50}, ${b.googleSheetUrl ?? null}, ${description},
+        ${b.notes ?? null}, ${b.sortOrder ?? 99}
+      )
       RETURNING *
     `;
     return NextResponse.json({ data: rows[0] }, { status: 201 });
