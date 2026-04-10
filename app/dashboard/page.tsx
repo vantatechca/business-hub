@@ -135,10 +135,10 @@ export default function DashboardPage() {
   const firstName = (session?.user?.name ?? "").split(" ")[0] || "there";
 
   const KPIS = [
-    { label:"Total Revenue",  value: tRev, prev: tRev * 0.92, format:"currency" as const, color:"#34d399", spark:[65,70,62,78,74,82,88,91,94,100] },
-    { label:"Total Expenses", value: tExp, prev: tExp * 1.04, format:"currency" as const, color:"#f87171", spark:[80,75,72,68,74,70,65,62,58,55] },
-    { label:"Active Tasks",   value: activeTasks, prev: activeTasks + 3, format:"number" as const, color:"#a78bfa", spark:[50,60,55,70,65,80,75,90,100,activeTasks] },
-    { label:"Check-In Rate",  value: ciStatus.rate, prev: Math.max(0, ciStatus.rate - 10), format:"percent" as const, color:"#5b8ef8", spark:[70,72,68,75,78,74,80,83,85,ciStatus.rate] },
+    { label:"Total Revenue",  value: tRev, prev: tRev * 0.92, format:"currency" as const, color:"#34d399", spark:[65,70,62,78,74,82,88,91,94,100], href: "/revenue" },
+    { label:"Total Expenses", value: tExp, prev: tExp * 1.04, format:"currency" as const, color:"#f87171", spark:[80,75,72,68,74,70,65,62,58,55], href: "/expenses" },
+    { label:"Active Tasks",   value: activeTasks, prev: activeTasks + 3, format:"number" as const, color:"#a78bfa", spark:[50,60,55,70,65,80,75,90,100,activeTasks], href: "/tasks" },
+    { label:"Check-In Rate",  value: ciStatus.rate, prev: Math.max(0, ciStatus.rate - 10), format:"percent" as const, color:"#5b8ef8", spark:[70,72,68,75,78,74,80,83,85,ciStatus.rate], href: "/checkin" },
   ];
 
   const renderKpiValue = (k: typeof KPIS[number]) => {
@@ -289,15 +289,22 @@ export default function DashboardPage() {
             const delta = k.prev > 0 ? Math.round(((k.value - k.prev) / k.prev) * 100) : 0;
             const positive = (k.label === "Total Expenses") ? delta <= 0 : delta >= 0;
             return (
-              <div
+              <Link
                 key={i}
+                href={k.href}
                 className="hub-card"
                 style={{
                   position: "relative",
                   padding: 18,
                   overflow: "hidden",
                   borderTop: `3px solid ${k.color}`,
+                  textDecoration: "none",
+                  color: "inherit",
+                  display: "block",
+                  transition: "transform .15s ease, box-shadow .15s ease",
                 }}
+                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 20px -10px rgba(0,0,0,0.25)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}
               >
                 <div aria-hidden style={{ position: "absolute", inset: 0, background: `radial-gradient(circle at 100% 0%, ${k.color}14, transparent 60%)`, pointerEvents: "none" }} />
                 <div style={{ position: "relative", display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12 }}>
@@ -320,7 +327,7 @@ export default function DashboardPage() {
                   </div>
                   <Sparkline data={k.spark} color={k.color}/>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
