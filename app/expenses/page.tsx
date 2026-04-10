@@ -1,10 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import AppLayout from "@/components/Layout";
 import { Modal, FormField, HubInput, HubSelect, useToast, ToastList, EmptyState } from "@/components/ui/shared";
 import type { ExpenseEntry, Department } from "@/lib/types";
 import { formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
 import { useCurrency } from "@/lib/CurrencyContext";
+import { Camera, Loader2 } from "lucide-react";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const blank = {
@@ -30,6 +31,12 @@ export default function ExpensesPage() {
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
   const [hov, setHov]         = useState<string | null>(null);
+  // Receipt scanner state
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanning, setScanning]       = useState(false);
+  const [scanPreview, setScanPreview] = useState<string | null>(null);
+  const [scanResult, setScanResult]   = useState<Record<string, unknown> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { ts, toast }         = useToast();
 
   const load = () => Promise.all([
@@ -95,6 +102,65 @@ export default function ExpensesPage() {
     });
   };
 
+  // ── RECEIPT SCANNER ────────────────────────────────────────
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUri = reader.result as string;
+      setScanPreview(dataUri);
+      setScanResult(null);
+      setScanning(true);
+      try {
+        const res = await fetch("/api/scan-receipt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: dataUri }),
+        });
+        const data = await res.json();
+        if (data.data?.error) {
+          toast(data.data.error, "er");
+          setScanResult(null);
+        } else if (data.data) {
+          setScanResult(data.data);
+        } else {
+          toast(data.error || "Scan failed", "er");
+        }
+      } catch {
+        toast("Scan failed", "er");
+      }
+      setScanning(false);
+    };
+    reader.readAsDataURL(file);
+    // Reset input so the same file can be selected again
+    e.target.value = "";
+  };
+
+  const applyScanResult = () => {
+    if (!scanResult) return;
+    const scannedMonth = scanResult.date
+      ? MONTHS[new Date(scanResult.date as string).getMonth()] || form.month
+      : form.month;
+    const scannedYear = scanResult.date
+      ? new Date(scanResult.date as string).getFullYear()
+      : form.year;
+    setForm(p => ({
+      ...p,
+      amount: Number(scanResult.amount) || p.amount,
+      currency: (CURRENCIES.includes(scanResult.currency as Currency) ? scanResult.currency : p.currency) as Currency,
+      description: (scanResult.vendor ? `${scanResult.vendor} — ` : "") + (scanResult.description || ""),
+      month: scannedMonth,
+      year: scannedYear,
+    }));
+    setShowScanner(false);
+    setShowAdd(true);
+    setScanPreview(null);
+    setScanResult(null);
+    toast("Receipt scanned! Review and save the expense.");
+  };
+
   const expenseForm = (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
@@ -133,10 +199,32 @@ export default function ExpensesPage() {
 
   return (
     <AppLayout title="Expenses" onNew={openAdd} newLabel="Add Entry">
+      {/* Hidden file input for receipt scanner */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileSelect}
+        style={{ display: "none" }}
+      />
       <ToastList ts={ts} />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 11, color: "var(--text-secondary)" }}>
-        <span>Display in:</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 11, color: "var(--text-secondary)", flexWrap: "wrap" }}>
+        <button
+          onClick={() => setShowScanner(true)}
+          style={{
+            padding: "6px 14px", borderRadius: 8,
+            background: "linear-gradient(135deg, var(--accent), var(--violet))",
+            color: "#fff", border: "none", fontSize: 11, fontWeight: 700,
+            cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+            marginRight: 8,
+          }}
+        >
+          <Camera size={14} /> Scan Receipt
+        </button>
+        <span style={{ color: "var(--border-card)" }}>|</span>
+        <span style={{ marginLeft: 4 }}>Display in:</span>
         {CURRENCIES.map(c => (
           <button
             key={c}
@@ -273,6 +361,87 @@ export default function ExpensesPage() {
           <button onClick={() => setEditing(null)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-primary)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
           <button onClick={update} style={{ padding:"7px 14px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontSize:12, fontWeight:700, cursor:"pointer" }}>Save Changes</button>
         </div>
+      </Modal>
+      {/* Receipt Scanner Modal */}
+      <Modal open={showScanner} onClose={() => { setShowScanner(false); setScanPreview(null); setScanResult(null); }} title="Scan Receipt / Document" width={480}>
+        {!scanPreview ? (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>📸</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>
+              Upload a receipt or invoice
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
+              AI will extract the vendor, amount, currency, and description automatically.
+            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding: "12px 28px", borderRadius: 10,
+                background: "var(--accent)", color: "#fff", border: "none",
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+                display: "inline-flex", alignItems: "center", gap: 8,
+              }}
+            >
+              <Camera size={16} /> Choose Photo
+            </button>
+          </div>
+        ) : (
+          <div>
+            {/* Preview */}
+            <div style={{
+              marginBottom: 14, borderRadius: 10, overflow: "hidden",
+              border: "1px solid var(--border-card)", maxHeight: 200,
+              display: "flex", justifyContent: "center", background: "var(--bg-input)",
+            }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={scanPreview} alt="Receipt" style={{ maxWidth: "100%", maxHeight: 200, objectFit: "contain" }} />
+            </div>
+
+            {scanning ? (
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <Loader2 size={24} style={{ animation: "spin 1s linear infinite", color: "var(--accent)", display: "inline-block", marginBottom: 10 }} />
+                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>Analyzing receipt with AI...</div>
+              </div>
+            ) : scanResult ? (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".07em", color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase" }}>
+                  Extracted Data
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                  {[
+                    { l: "Vendor", v: scanResult.vendor },
+                    { l: "Amount", v: `${scanResult.currency} ${Number(scanResult.amount).toFixed(2)}` },
+                    { l: "Date", v: scanResult.date || "Not detected" },
+                    { l: "Description", v: scanResult.description },
+                  ].map(({ l, v }) => (
+                    <div key={l} style={{ display: "flex", gap: 8, fontSize: 12 }}>
+                      <span style={{ fontWeight: 700, color: "var(--text-secondary)", minWidth: 80 }}>{l}:</span>
+                      <span style={{ color: "var(--text-primary)" }}>{String(v)}</span>
+                    </div>
+                  ))}
+                  {scanResult.confidence != null && (
+                    <div style={{ fontSize: 10, color: Number(scanResult.confidence) >= 0.7 ? "var(--success)" : "var(--warning)", fontWeight: 700, marginTop: 4 }}>
+                      Confidence: {Math.round(Number(scanResult.confidence) * 100)}%
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+                  <button onClick={() => { setScanPreview(null); setScanResult(null); }} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    Try Another
+                  </button>
+                  <button onClick={applyScanResult} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    Use This Data
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: "center", padding: "10px 0", color: "var(--text-muted)", fontSize: 12 }}>
+                Scan complete. No results.
+              </div>
+            )}
+          </div>
+        )}
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </Modal>
     </AppLayout>
   );
