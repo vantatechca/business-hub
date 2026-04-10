@@ -45,7 +45,37 @@ export default function UsersPage() {
   const [form, setForm]       = useState<typeof blank>({ ...blank });
   const [drawerUserId, setDrawerUserId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<{ email: string; password: string; name: string; kind: "created" | "reset" } | null>(null);
+  // Bulk operations
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState("");
+  const [bulkValue, setBulkValue] = useState<string>("");
+  const [bulkLoading, setBulkLoading] = useState(false);
   const { ts, toast } = useToast();
+
+  const toggleSelect = (id: string) => setSelected(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected(p => p.size === rows.length ? new Set() : new Set(rows.map(u => u.id)));
+
+  const executeBulk = async () => {
+    if (!bulkAction || selected.size === 0) return;
+    setBulkLoading(true);
+    let value: string | boolean = bulkValue;
+    if (bulkAction === "update_checkin" || bulkAction === "update_birthday_notif") value = bulkValue === "true";
+    const res = await fetch("/api/users/bulk", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: bulkAction, userIds: Array.from(selected), value }),
+    });
+    const d = await res.json();
+    setBulkLoading(false);
+    if (res.ok) {
+      toast(`Bulk update: ${d.data?.updated ?? 0} users updated`);
+      setSelected(new Set());
+      setBulkAction("");
+      setBulkValue("");
+      await load();
+    } else {
+      toast(d.error || "Bulk update failed", "er");
+    }
+  };
 
   const load = () =>
     fetch("/api/users").then(r => r.json()).then(d => {
@@ -255,6 +285,71 @@ export default function UsersPage() {
         <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{rows.length} users</span>
       </div>
 
+      {/* Bulk actions bar */}
+      {isAdmin && selected.size > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
+          borderRadius: 10, background: "var(--accent-bg)", border: "1px solid var(--accent)44",
+          marginBottom: 12, flexWrap: "wrap",
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>
+            {selected.size} selected
+          </span>
+          <select
+            value={bulkAction}
+            onChange={e => { setBulkAction(e.target.value); setBulkValue(""); }}
+            style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-card)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}
+          >
+            <option value="">Choose action…</option>
+            <option value="update_role">Change Role</option>
+            <option value="update_checkin">Set Check-in Requirement</option>
+            <option value="update_birthday_notif">Set Birthday Notifications</option>
+            <option value="update_timezone">Set Timezone</option>
+            <option value="reset_passwords">Reset Passwords</option>
+            <option value="activate">Activate</option>
+            <option value="deactivate">Deactivate</option>
+          </select>
+
+          {bulkAction === "update_role" && (
+            <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-card)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}>
+              <option value="">Select role…</option>
+              {ROLES.map(r => <option key={r} value={r}>{r === "super_admin" ? "Super Admin" : r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+            </select>
+          )}
+          {(bulkAction === "update_checkin" || bulkAction === "update_birthday_notif") && (
+            <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-card)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}>
+              <option value="">Select…</option>
+              <option value="true">Enable</option>
+              <option value="false">Disable</option>
+            </select>
+          )}
+          {bulkAction === "update_timezone" && (
+            <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-card)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}>
+              <option value="">Select timezone…</option>
+              {TZONES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+
+          <button
+            onClick={executeBulk}
+            disabled={bulkLoading || !bulkAction || (["update_role", "update_checkin", "update_birthday_notif", "update_timezone"].includes(bulkAction) && !bulkValue)}
+            style={{
+              padding: "6px 14px", borderRadius: 7, background: "var(--accent)", color: "#fff",
+              border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+              opacity: bulkLoading ? 0.5 : 1,
+            }}
+          >
+            {bulkLoading ? "Applying…" : "Apply"}
+          </button>
+          <button
+            onClick={() => { setSelected(new Set()); setBulkAction(""); }}
+            style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "transparent", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div className="skeleton" style={{ height:400, borderRadius:12 }}/>
@@ -263,10 +358,14 @@ export default function UsersPage() {
       ) : (
         <div className="hub-card" style={{ padding:0, overflow:"hidden" }}>
           <table className="hub-table">
-            <thead><tr>{["User","Email","Role","Timezone","Last Login",""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+            <thead><tr>
+              {isAdmin && <th style={{ width: 32 }}><input type="checkbox" checked={selected.size === rows.length && rows.length > 0} onChange={toggleAll} style={{ cursor: "pointer", accentColor: "var(--accent)" }} /></th>}
+              {["User","Email","Role","Timezone","Last Login",""].map(h => <th key={h}>{h}</th>)}
+            </tr></thead>
             <tbody>
               {rows.map(u => (
-                <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => setDrawerUserId(String(u.id))}>
+                <tr key={u.id} style={{ cursor: "pointer", background: selected.has(u.id) ? "var(--accent-bg)" : undefined }} onClick={() => setDrawerUserId(String(u.id))}>
+                  {isAdmin && <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleSelect(u.id)} style={{ cursor: "pointer", accentColor: "var(--accent)" }} /></td>}
                   <td>
                     <div style={{ display:"flex", alignItems:"center", gap:9 }}>
                       <Avatar s={u.initials ?? "?"} size={30}/>
