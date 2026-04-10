@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-5",
-        max_tokens: 500,
+        max_tokens: 1000,
         messages: [{
           role: "user",
           content: [
@@ -65,23 +65,27 @@ export async function POST(req: NextRequest) {
             },
             {
               type: "text",
-              text: `Analyze this receipt/invoice/document image and extract expense information.
+              text: `Analyze this receipt/invoice/document image. Extract EACH individual line item as a separate entry.
 
 Return ONLY valid JSON (no markdown, no explanation):
 {
   "vendor": "string — store or company name",
-  "amount": number — total amount (just the number, no currency symbol),
   "currency": "USD" or "CAD" — detected currency,
   "date": "YYYY-MM-DD" or null if not readable,
-  "description": "string — brief description of what was purchased",
-  "items": [{ "name": "string", "amount": number }] — line items if visible,
-  "confidence": number — 0 to 1, how confident you are in the extraction
+  "items": [
+    { "description": "string — what was purchased", "qty": number, "unitPrice": number, "amount": number }
+  ],
+  "tax": number or null,
+  "total": number,
+  "confidence": number — 0 to 1
 }
 
 Rules:
-- Extract the TOTAL amount, not subtotals
+- Extract EVERY line item separately — do NOT combine them into one total
+- Each item should have its own description, quantity, unit price, and line amount
+- Include tax as a separate field (not as a line item)
+- The total is the final amount including tax
 - Default currency to "USD" if unclear
-- Include tax in the total if shown on receipt
 - If the image is not a receipt/invoice, return { "error": "Not a receipt", "confidence": 0 }`,
             },
           ],

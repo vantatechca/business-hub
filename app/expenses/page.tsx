@@ -138,27 +138,52 @@ export default function ExpensesPage() {
     e.target.value = "";
   };
 
-  const applyScanResult = () => {
-    if (!scanResult) return;
-    const scannedMonth = scanResult.date
-      ? MONTHS[new Date(scanResult.date as string).getMonth()] || form.month
-      : form.month;
-    const scannedYear = scanResult.date
-      ? new Date(scanResult.date as string).getFullYear()
-      : form.year;
-    setForm(p => ({
-      ...p,
-      amount: Number(scanResult.amount) || p.amount,
-      currency: (CURRENCIES.includes(scanResult.currency as Currency) ? scanResult.currency : p.currency) as Currency,
-      description: (scanResult.vendor ? `${scanResult.vendor} — ` : "") + (scanResult.description || ""),
-      month: scannedMonth,
-      year: scannedYear,
-    }));
+  // Track which scanned line items the user wants to add
+  const [selectedItems, setSelectedItems] = useState<Record<number, boolean>>({});
+
+  const toggleItem = (idx: number) =>
+    setSelectedItems(p => ({ ...p, [idx]: !p[idx] }));
+
+  const selectAllItems = (items: unknown[]) => {
+    const all: Record<number, boolean> = {};
+    items.forEach((_, i) => { all[i] = true; });
+    setSelectedItems(all);
+  };
+
+  const addSelectedItems = async () => {
+    if (!scanResult?.items) return;
+    const items = scanResult.items as { description: string; amount: number }[];
+    const currency = (CURRENCIES.includes(scanResult.currency as Currency) ? scanResult.currency : "USD") as Currency;
+    const vendor = String(scanResult.vendor || "");
+    const scannedDate = scanResult.date ? new Date(String(scanResult.date)) : null;
+    const month = scannedDate ? MONTHS[scannedDate.getMonth()] : MONTHS[new Date().getMonth()];
+    const year = scannedDate ? scannedDate.getFullYear() : new Date().getFullYear();
+
+    let added = 0;
+    for (let i = 0; i < items.length; i++) {
+      if (!selectedItems[i]) continue;
+      const item = items[i];
+      await fetch("/api/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: Number(item.amount) || 0,
+          currency,
+          departmentId: depts[0]?.id || null,
+          description: vendor ? `${vendor} — ${item.description}` : item.description,
+          month,
+          year,
+        }),
+      });
+      added++;
+    }
+
+    await load();
     setShowScanner(false);
-    setShowAdd(true);
     setScanPreview(null);
     setScanResult(null);
-    toast("Receipt scanned! Review and save the expense.");
+    setSelectedItems({});
+    toast(`${added} expense${added !== 1 ? "s" : ""} added from receipt`);
   };
 
   const expenseForm = (
@@ -404,35 +429,103 @@ export default function ExpensesPage() {
               </div>
             ) : scanResult ? (
               <div>
-                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".07em", color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase" }}>
-                  Extracted Data
+                {/* Header info */}
+                <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 12 }}>
+                  {scanResult.vendor ? (
+                    <div><span style={{ color: "var(--text-muted)", fontWeight: 700 }}>Vendor:</span> <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{String(scanResult.vendor)}</span></div>
+                  ) : null}
+                  {scanResult.date ? (
+                    <div><span style={{ color: "var(--text-muted)", fontWeight: 700 }}>Date:</span> <span style={{ color: "var(--text-primary)" }}>{String(scanResult.date)}</span></div>
+                  ) : null}
+                  <div><span style={{ color: "var(--text-muted)", fontWeight: 700 }}>Currency:</span> <span style={{ color: "var(--text-primary)" }}>{String(scanResult.currency || "USD")}</span></div>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
-                  {[
-                    { l: "Vendor", v: scanResult.vendor },
-                    { l: "Amount", v: `${scanResult.currency} ${Number(scanResult.amount).toFixed(2)}` },
-                    { l: "Date", v: scanResult.date || "Not detected" },
-                    { l: "Description", v: scanResult.description },
-                  ].map(({ l, v }) => (
-                    <div key={l} style={{ display: "flex", gap: 8, fontSize: 12 }}>
-                      <span style={{ fontWeight: 700, color: "var(--text-secondary)", minWidth: 80 }}>{l}:</span>
-                      <span style={{ color: "var(--text-primary)" }}>{String(v)}</span>
+
+                {/* Line items with checkboxes */}
+                {Array.isArray(scanResult.items) && scanResult.items.length > 0 ? (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".07em", color: "var(--text-muted)", textTransform: "uppercase" }}>
+                        {(scanResult.items as unknown[]).length} Line Items
+                      </div>
+                      <button
+                        onClick={() => selectAllItems(scanResult.items as unknown[])}
+                        style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer" }}
+                      >
+                        Select All
+                      </button>
                     </div>
-                  ))}
-                  {scanResult.confidence != null && (
-                    <div style={{ fontSize: 10, color: Number(scanResult.confidence) >= 0.7 ? "var(--success)" : "var(--warning)", fontWeight: 700, marginTop: 4 }}>
-                      Confidence: {Math.round(Number(scanResult.confidence) * 100)}%
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12, maxHeight: 220, overflowY: "auto" }}>
+                      {(scanResult.items as { description: string; qty?: number; unitPrice?: number; amount: number }[]).map((item, i) => (
+                        <label
+                          key={i}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            padding: "8px 12px", borderRadius: 8,
+                            border: `1.5px solid ${selectedItems[i] ? "var(--accent)" : "var(--border-card)"}`,
+                            background: selectedItems[i] ? "var(--accent-bg)" : "var(--bg-input)",
+                            cursor: "pointer", transition: "all .12s",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!selectedItems[i]}
+                            onChange={() => toggleItem(i)}
+                            style={{ accentColor: "var(--accent)", width: 15, height: 15, flexShrink: 0, cursor: "pointer" }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {item.description}
+                            </div>
+                            {(item.qty || item.unitPrice) && (
+                              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                                {item.qty ? `Qty: ${item.qty}` : ""}{item.qty && item.unitPrice ? " × " : ""}{item.unitPrice ? `${String(scanResult.currency || "$")}${Number(item.unitPrice).toFixed(2)}` : ""}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)", flexShrink: 0 }}>
+                            {String(scanResult.currency || "$")}{Number(item.amount).toFixed(2)}
+                          </div>
+                        </label>
+                      ))}
                     </div>
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
-                  <button onClick={() => { setScanPreview(null); setScanResult(null); }} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                    Try Another
-                  </button>
-                  <button onClick={applyScanResult} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    Use This Data
-                  </button>
-                </div>
+
+                    {/* Summary */}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-secondary)", padding: "6px 0", borderTop: "1px solid var(--border-divider)" }}>
+                      <span>{Object.values(selectedItems).filter(Boolean).length} of {(scanResult.items as unknown[]).length} selected</span>
+                      <span>
+                        {scanResult.tax != null && <span style={{ marginRight: 12 }}>Tax: {String(scanResult.currency || "$")}{Number(scanResult.tax).toFixed(2)}</span>}
+                        Total: <strong style={{ color: "var(--text-primary)" }}>{String(scanResult.currency || "$")}{Number(scanResult.total).toFixed(2)}</strong>
+                      </span>
+                    </div>
+
+                    {scanResult.confidence != null && (
+                      <div style={{ fontSize: 10, color: Number(scanResult.confidence) >= 0.7 ? "var(--success)" : "var(--warning)", fontWeight: 700, marginTop: 6 }}>
+                        Confidence: {Math.round(Number(scanResult.confidence) * 100)}%
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 12 }}>
+                      <button onClick={() => { setScanPreview(null); setScanResult(null); setSelectedItems({}); }} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        Try Another
+                      </button>
+                      <button
+                        onClick={addSelectedItems}
+                        disabled={Object.values(selectedItems).filter(Boolean).length === 0}
+                        style={{
+                          padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff",
+                          border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                          opacity: Object.values(selectedItems).filter(Boolean).length === 0 ? 0.5 : 1,
+                        }}
+                      >
+                        Add {Object.values(selectedItems).filter(Boolean).length} Expense{Object.values(selectedItems).filter(Boolean).length !== 1 ? "s" : ""}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: "center", padding: "10px 0", color: "var(--text-muted)", fontSize: 12 }}>
+                    No line items detected.
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ textAlign: "center", padding: "10px 0", color: "var(--text-muted)", fontSize: 12 }}>
