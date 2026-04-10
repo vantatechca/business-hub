@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, rowsToCamel, toCamel } from "@/lib/db";
+import { sql, rowsToCamel, toCamel, toDateString } from "@/lib/db";
 
 function shape(r: Record<string, unknown>): Record<string, unknown> {
-  return { ...r, amount: Number(r.amount) };
+  const out: Record<string, unknown> = { ...r, amount: Number(r.amount) };
+  if (out.entryDate != null) out.entryDate = toDateString(out.entryDate);
+  return out;
 }
 
 const ALLOWED_CURRENCIES = new Set(["USD", "CAD"]);
