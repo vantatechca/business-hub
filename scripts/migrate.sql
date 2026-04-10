@@ -184,6 +184,23 @@ CREATE TABLE IF NOT EXISTS metric_contributions (
 CREATE INDEX IF NOT EXISTS idx_contributions_metric_date ON metric_contributions(metric_id, contribution_date);
 CREATE INDEX IF NOT EXISTS idx_contributions_user ON metric_contributions(user_id, contribution_date);
 
+-- ── INVESTORS ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS investors (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name          VARCHAR(255) NOT NULL,
+  email         VARCHAR(255),
+  phone         VARCHAR(50),
+  company       VARCHAR(255),
+  investment_amount DECIMAL DEFAULT 0,
+  currency      VARCHAR(3) DEFAULT 'USD',
+  notes         TEXT,
+  avatar_url    TEXT,
+  user_id       UUID REFERENCES users(id),
+  is_active     BOOLEAN DEFAULT TRUE,
+  created_at    TIMESTAMP DEFAULT NOW(),
+  updated_at    TIMESTAMP DEFAULT NOW()
+);
+
 -- ────────────────────────────────────────────────────────────
 -- Additive migrations that reference departments(id) are no longer
 -- declared here. They're applied by scripts/setup-db.js AFTER this

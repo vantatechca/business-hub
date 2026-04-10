@@ -79,7 +79,17 @@ export default function MetricsPage() {
   const [deleting, setDeleting]   = useState<Metric | null>(null);
   const [form, setForm]           = useState<typeof blank>({ ...blank });
   const [viewing, setViewing]     = useState<Metric | null>(null);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsedRaw] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
+    try { return JSON.parse(localStorage.getItem("metrics_collapsed") ?? "{}"); } catch { return {}; }
+  });
+  const setCollapsed = (fn: (prev: Record<string, boolean>) => Record<string, boolean>) => {
+    setCollapsedRaw(prev => {
+      const next = fn(prev);
+      try { localStorage.setItem("metrics_collapsed", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
   const [myAssignedIds, setMyAssignedIds] = useState<Set<string>>(new Set());
   // Department notes editing
   const [deptNotesModal, setDeptNotesModal] = useState<Department | null>(null);

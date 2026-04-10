@@ -27,12 +27,13 @@ const NAV = [
     {id:"team",l:"Team",h:"/team",I:Users},
     {id:"tasks",l:"Tasks",h:"/tasks",I:ListChecks},
     {id:"checkin",l:"Check-Ins",h:"/checkin",I:CalendarCheck},
-    {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake, mgrOnly:true},
+    {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake},
   ]},
   { s:"FINANCE", items:[
     {id:"revenue",l:"Revenue",h:"/revenue",I:DollarSign, mgrOnly:true},
     {id:"expenses",l:"Expenses",h:"/expenses",I:CreditCard, mgrOnly:true},
     {id:"goals",l:"Goals",h:"/goals",I:Target, mgrOnly:true},
+    {id:"investors",l:"Investors",h:"/investors",I:Users, mgrOnly:true},
   ]},
   { s:"ADMIN", items:[
     {id:"users",l:"Users",h:"/users",I:Shield},

@@ -12,7 +12,7 @@ import { Cake, AlertCircle, Quote } from "lucide-react";
 import { useCurrency } from "@/lib/CurrencyContext";
 import { formatMoney, type Currency } from "@/lib/currency";
 import type { Inspiration } from "@/lib/dailyInspiration";
-import { curatedInspiration, attributionFor } from "@/lib/dailyInspiration";
+import { curatedInspiration, attributionFor, greetingForHour } from "@/lib/dailyInspiration";
 
 interface BdayUser { userId: string; name: string; initials: string; daysUntil: number; turningAge?: number }
 interface BdayResp { today: BdayUser[]; upcoming: BdayUser[]; recent: BdayUser[] }
@@ -76,7 +76,13 @@ export default function DashboardPage() {
     const refresh = () => {
       fetch("/api/inspiration")
         .then(r => r.json())
-        .then(d => { if (!cancelled && d?.data) setInspiration(d.data as Inspiration); })
+        .then(d => {
+          if (!cancelled && d?.data) {
+            // Override greeting with the user's local timezone hour
+            const localGreeting = greetingForHour(new Date().getHours());
+            setInspiration({ ...(d.data as Inspiration), greeting: localGreeting });
+          }
+        })
         .catch(() => {});
     };
     refresh();
