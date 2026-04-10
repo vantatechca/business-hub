@@ -260,7 +260,10 @@ export default function MetricsPage() {
                   if (newId) setForm(p => ({ ...p, departmentId: String(newId) }));
                   setShowNewDept(false);
                   toast(`Department "${newDeptName.trim()}" created`);
-                } else { toast("Failed to create department", "er"); }
+                } else {
+                  const err = await res.json().catch(() => ({}));
+                  toast(err.error || "Failed to create department", "er");
+                }
               }}
               style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
             >

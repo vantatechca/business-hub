@@ -64,19 +64,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const b = await req.json();
-  // The form sends "head" as the department description, plus an optional
-  // "notes" textarea (which replaces the old health field). description and
-  // notes are stored as separate columns: description is the short tagline
-  // shown on the card, notes is the long-form content shown on detail pages.
+  if (!b.name || !String(b.name).trim()) {
+    return NextResponse.json({ error: "Department name is required" }, { status: 400 });
+  }
   const description = b.description ?? b.head ?? null;
+
+  // Build a unique, URL-safe slug. If the requested slug is taken, append
+  // -2, -3, etc. until we find a free one.
+  const baseSlug =
+    (b.slug ?? String(b.name))
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "dept";
+
   try {
+    let slug = baseSlug;
+    let n = 1;
+    // Try up to 20 variants
+    while (n < 20) {
+      const existing = await sql`SELECT 1 FROM departments WHERE slug = ${slug} LIMIT 1`;
+      if (!existing.length) break;
+      n++;
+      slug = `${baseSlug}-${n}`;
+    }
+
     const rows = await sql`
       INSERT INTO departments (name, slug, color, icon, priority_score, google_sheet_url, description, notes, sort_order)
-      VALUES (${b.name}, ${b.slug ?? b.name.toLowerCase().replace(/\s+/g,"-")}, ${b.color ?? "#5b8ef8"},
+      VALUES (${b.name}, ${slug}, ${b.color ?? "#5b8ef8"},
               ${b.icon ?? "📦"}, ${b.priorityScore ?? 50}, ${b.googleSheetUrl ?? null}, ${description},
               ${b.notes ?? null}, ${b.sortOrder ?? 99})
       RETURNING *
     `;
     return NextResponse.json({ data: rows[0] }, { status: 201 });
-  } catch(e: unknown) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
+  } catch(e: unknown) {
+    console.error("[departments/POST] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
 }
