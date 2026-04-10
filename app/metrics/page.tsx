@@ -93,7 +93,7 @@ export default function MetricsPage() {
   const [myAssignedIds, setMyAssignedIds] = useState<Set<string>>(new Set());
   // Department notes editing
   const [deptNotesModal, setDeptNotesModal] = useState<Department | null>(null);
-  const [deptNotesForm, setDeptNotesForm]   = useState({ notes: "", googleSheetUrl: "" });
+  const [deptNotesForm, setDeptNotesForm]   = useState({ notes: "" });
   const [showNewDept, setShowNewDept] = useState(false);
   const [newDeptName, setNewDeptName] = useState("");
   const { ts, toast } = useToast();
@@ -184,7 +184,7 @@ export default function MetricsPage() {
   // ── DEPARTMENT NOTES ──────────────────────────────────────
   const openDeptNotes = (dept: Department) => {
     setDeptNotesModal(dept);
-    setDeptNotesForm({ notes: dept.notes ?? "", googleSheetUrl: dept.googleSheetUrl ?? "" });
+    setDeptNotesForm({ notes: dept.notes ?? "" });
   };
 
   const saveDeptNotes = async () => {
@@ -193,7 +193,6 @@ export default function MetricsPage() {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         notes: deptNotesForm.notes || null,
-        googleSheetUrl: deptNotesForm.googleSheetUrl || null,
       }),
     });
     if (!res.ok) return toast("Failed to update notes", "er");
@@ -203,7 +202,7 @@ export default function MetricsPage() {
   const clearDeptNotes = async (dept: Department) => {
     await fetch(`/api/departments/${dept.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notes: null, googleSheetUrl: null }),
+      body: JSON.stringify({ notes: null }),
     });
     await load(); toast("Notes cleared");
   };
@@ -379,7 +378,7 @@ export default function MetricsPage() {
             const isCollapsed = !!collapsed[deptId];
             const totalMetrics = deptMetrics.filter(m => m.metricType === "value" || m.metricType === "value_and_daily");
             const dailyMetrics = deptMetrics.filter(m => m.metricType === "daily" || m.metricType === "value_and_daily");
-            const hasNotes = !!(dept.notes || dept.googleSheetUrl);
+            const hasNotes = !!dept.notes;
 
             return (
               <div
@@ -424,26 +423,8 @@ export default function MetricsPage() {
                         fontSize: 12, color: "var(--text-secondary)",
                         minHeight: 38,
                       }}>
-                        <div style={{ flex: 1, lineHeight: 1.6, overflowWrap: "break-word", minWidth: 0 }}>
-                          {dept.googleSheetUrl && (
-                            <div style={{ marginBottom: dept.notes ? 4 : 0 }}>
-                              <span style={{
-                                fontSize: 10, fontWeight: 800, letterSpacing: ".06em",
-                                color: "var(--text-muted)", marginRight: 8, textTransform: "uppercase",
-                              }}>
-                                {dept.name}
-                              </span>
-                              <a
-                                href={dept.googleSheetUrl} target="_blank" rel="noopener noreferrer"
-                                onClick={e => e.stopPropagation()}
-                                style={{ color: "var(--accent)", textDecoration: "none", fontSize: 12, wordBreak: "break-all" }}
-                              >
-                                {dept.googleSheetUrl}
-                              </a>
-                            </div>
-                          )}
-                          {dept.notes && <Linkify text={dept.notes} />}
-                          {!hasNotes && (
+                        <div style={{ flex: 1, lineHeight: 1.6, overflowWrap: "break-word", minWidth: 0, whiteSpace: "pre-wrap" }}>
+                          {dept.notes ? <Linkify text={dept.notes} /> : (
                             <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
                               Add notes or links…
                             </span>
@@ -556,19 +537,12 @@ export default function MetricsPage() {
 
       {/* Department notes modal */}
       <Modal open={!!deptNotesModal} onClose={() => setDeptNotesModal(null)} title={`Notes: ${deptNotesModal?.name ?? ""}`} width={480}>
-        <FormField label="Link / Google Sheet URL">
-          <HubInput
-            value={deptNotesForm.googleSheetUrl}
-            onChange={e => setDeptNotesForm(p => ({ ...p, googleSheetUrl: e.target.value }))}
-            placeholder="https://docs.google.com/spreadsheets/..."
-          />
-        </FormField>
         <FormField label="Notes">
           <HubTextarea
             value={deptNotesForm.notes}
             onChange={e => setDeptNotesForm(p => ({ ...p, notes: e.target.value }))}
-            placeholder="Add notes, instructions, or additional links…"
-            rows={4}
+            placeholder="Add notes, instructions, or paste any links (https://...)"
+            rows={6}
           />
         </FormField>
         <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>

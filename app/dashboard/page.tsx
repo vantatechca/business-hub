@@ -219,9 +219,9 @@ export default function DashboardPage() {
         </div>
 
         {/* Top alerts — birthdays + missing check-ins (manager+ only for team alerts) */}
-        {(unreviewedBdays.length > 0 || (isManager && ciStatus.missing.length > 0)) && (
-          <div style={{ display: "grid", gridTemplateColumns: unreviewedBdays.length > 0 && isManager && ciStatus.missing.length > 0 ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 14 }}>
-            {unreviewedBdays.length > 0 && (
+        {((isManager && unreviewedBdays.length > 0) || (isManager && ciStatus.missing.length > 0)) && (
+          <div style={{ display: "grid", gridTemplateColumns: isManager && unreviewedBdays.length > 0 && ciStatus.missing.length > 0 ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 14 }}>
+            {isManager && unreviewedBdays.length > 0 && (
               <Link
                 href="/birthdays"
                 style={{
