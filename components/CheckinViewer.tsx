@@ -324,7 +324,16 @@ export default function CheckinViewer({ checkin, open, onClose, onReviewed }: Pr
                   </div>
 
                   {/* Reviewer action */}
-                  <div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {canReview && !isOwner && (
+                      <button
+                        onClick={() => { if (confirm(`Delete this check-in? This cannot be undone.`)) handleDelete(); }}
+                        disabled={deleting}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, fontWeight: 700, cursor: "pointer", opacity: deleting ? 0.5 : 1 }}
+                      >
+                        {deleting ? "Deleting…" : "Delete"}
+                      </button>
+                    )}
                     {canReview && (
                       alreadyReviewed ? (
                         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--success)", fontWeight: 700 }}>
