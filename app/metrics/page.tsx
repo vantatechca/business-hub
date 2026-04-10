@@ -505,11 +505,11 @@ export default function MetricsPage() {
                         </div>
                         <div style={{
                           display: "grid",
-                          gridTemplateColumns: "1fr 100px 120px 1fr 80px",
+                          gridTemplateColumns: "1fr 90px 90px 100px 1fr 80px",
                           padding: "8px 18px",
                           background: "var(--bg-input)",
                         }}>
-                          {["METRIC", "TODAY", "30-DAY TOTAL", "NOTES", ""].map((h, i) => (
+                          {["METRIC", "TODAY", "WEEKLY", "OVERALL", "NOTES", ""].map((h, i) => (
                             <div key={i} style={{
                               fontSize: 10, fontWeight: 800, color: "var(--text-muted)",
                               letterSpacing: ".07em", textTransform: "uppercase",
@@ -723,7 +723,7 @@ function DailyMetricRow({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 100px 120px 1fr 80px",
+        gridTemplateColumns: "1fr 90px 90px 100px 1fr 80px",
         padding: "10px 18px",
         borderTop: "1px solid var(--border-divider)",
         alignItems: "center",
@@ -756,7 +756,7 @@ function DailyMetricRow({
             onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(); } }}
             disabled={saving}
             style={{
-              width: 75, padding: "5px 8px", borderRadius: 6,
+              width: 70, padding: "5px 8px", borderRadius: 6,
               border: "1px solid var(--border-card)", background: "var(--bg-card)",
               color: "var(--text-primary)", fontSize: 13, fontWeight: 700,
               textAlign: "center", outline: "none",
@@ -770,9 +770,14 @@ function DailyMetricRow({
         )}
       </div>
 
-      {/* 30-day total */}
+      {/* Weekly total (last 7 days) */}
       <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
-        {m.thirtyDayTotal ?? 0}
+        {m.weeklyTotal ?? 0}
+      </div>
+
+      {/* Overall total (all time) */}
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+        {m.overallTotal ?? m.currentValue ?? 0}
       </div>
 
       {/* Notes */}
