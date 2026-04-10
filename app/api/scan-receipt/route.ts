@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5-20241022",
+        model: "claude-sonnet-4-5-20250514",
         max_tokens: 500,
         messages: [{
           role: "user",
