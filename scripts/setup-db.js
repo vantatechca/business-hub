@@ -291,6 +291,11 @@ async function runAdditiveMigrations() {
     `ALTER TABLE goals ADD COLUMN IF NOT EXISTS notes TEXT`,
     // Goals — stored currency (USD/CAD) for goals with format='currency'.
     `ALTER TABLE goals ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'`,
+    // Tasks — extended fields for rich task tracking.
+    `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS notes TEXT`,
+    `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence VARCHAR(20) DEFAULT 'one-time'`,
+    `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS goal_value DECIMAL DEFAULT 0`,
+    `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS done_value DECIMAL DEFAULT 0`,
 
     // Departments — free-text notes shown on the department detail page.
     // Replaces the old "health" field in the edit form.
