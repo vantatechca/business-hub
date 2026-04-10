@@ -2,18 +2,31 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
-import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState, formatValue } from "@/components/ui/shared";
-import { Sortable, useSortableItem, DragHandle, overlayCardStyle } from "@/components/ui/Sortable";
+import { Card, ProgressBar, Modal, FormField, HubInput, HubSelect, ConfirmModal, useToast, ToastList, EmptyState } from "@/components/ui/shared";
+import { Sortable, useSortableItem, overlayCardStyle } from "@/components/ui/Sortable";
 import { GripVertical } from "lucide-react";
 import type { Goal } from "@/lib/types";
+import { useCurrency } from "@/lib/CurrencyContext";
+import { formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
 
 const COLORS = ["#34d399","#5b8ef8","#a78bfa","#fbbf24","#f87171","#22d3ee","#fb923c","#6366f1","#84cc16","#e879f9"];
-const blank = { name:"", target:100, current:0, format:"number" as Goal["format"], color:COLORS[0], notes:"" };
+const blank = { name:"", target:100, current:0, format:"number" as Goal["format"], currency:"USD" as string, color:COLORS[0], notes:"" };
+
+/** Format a goal value respecting currency conversion when format is "currency". */
+function fmtGoalValue(v: number, format: string, goalCurrency: string | undefined, displayCurrency: Currency, convert: (a: number, from: Currency, to: Currency) => number): string {
+  if (format === "currency") {
+    const from = (goalCurrency || "USD") as Currency;
+    return formatMoney(convert(v, from, displayCurrency), displayCurrency);
+  }
+  if (format === "percent") return `${v}%`;
+  return v.toLocaleString();
+}
 
 export default function GoalsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
   const canReorder = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
+  const { currency: globalCurrency, convert } = useCurrency();
 
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,7 +94,7 @@ export default function GoalsPage() {
   const goalForm = (
     <div>
       <FormField label="Goal Name"><HubInput value={form.name} onChange={e => setForm(p => ({...p,name:e.target.value}))} placeholder="e.g. Annual Revenue, NPS Score…" /></FormField>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
+      <div style={{ display:"grid", gridTemplateColumns: form.format === "currency" ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap:12 }}>
         <FormField label="Target"><HubInput type="number" value={form.target} onChange={e => setForm(p => ({...p,target:+e.target.value}))} /></FormField>
         <FormField label="Current"><HubInput type="number" value={form.current} onChange={e => setForm(p => ({...p,current:+e.target.value}))} /></FormField>
         <FormField label="Format">
@@ -91,6 +104,13 @@ export default function GoalsPage() {
             <option value="percent">Percent</option>
           </HubSelect>
         </FormField>
+        {form.format === "currency" && (
+          <FormField label="Currency">
+            <HubSelect value={form.currency} onChange={e => setForm(p => ({...p, currency: e.target.value}))}>
+              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </HubSelect>
+          </FormField>
+        )}
       </div>
       <FormField label="Color">
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
@@ -128,7 +148,7 @@ export default function GoalsPage() {
           onReorder={handleReorder}
           strategy="grid"
           disabled={!canReorder}
-          renderOverlay={g => <GoalCardPreview g={g} />}
+          renderOverlay={g => <GoalCardPreview g={g} displayCurrency={globalCurrency} convert={convert} />}
         >
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))", gap:12 }} className="stagger-children">
             {goals.map(g => (
@@ -137,8 +157,10 @@ export default function GoalsPage() {
                 g={g}
                 dragEnabled={canReorder}
                 onUpdate={() => openUpdate(g)}
-                onEdit={() => { setEditing(g); setForm({ name:g.name, target:g.target, current:g.current, format:g.format, color:g.color, notes: g.notes ?? "" }); }}
+                onEdit={() => { setEditing(g); setForm({ name:g.name, target:g.target, current:g.current, format:g.format, currency: g.currency ?? "USD", color:g.color, notes: g.notes ?? "" }); }}
                 onDelete={() => setDeleting(g)}
+                displayCurrency={globalCurrency}
+                convert={convert}
               />
             ))}
           </div>
@@ -171,11 +193,11 @@ export default function GoalsPage() {
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 8 }}>
             Current:&nbsp;
             <strong style={{ color: "var(--text-primary)" }}>
-              {updating ? formatValue(updating.goal.current, updating.goal.format) : ""}
+              {updating ? fmtGoalValue(updating.goal.current, updating.goal.format, updating.goal.currency, globalCurrency, convert) : ""}
             </strong>
             &nbsp;·&nbsp;Target:&nbsp;
             <strong style={{ color: "var(--text-primary)" }}>
-              {updating ? formatValue(updating.goal.target, updating.goal.format) : ""}
+              {updating ? fmtGoalValue(updating.goal.target, updating.goal.format, updating.goal.currency, globalCurrency, convert) : ""}
             </strong>
           </div>
           <FormField label="New current value">
@@ -211,13 +233,18 @@ function GoalCardBody({
   g,
   dragHandle,
   actions,
+  displayCurrency,
+  convert,
 }: {
   g: Goal;
   dragHandle?: React.ReactNode;
   actions?: React.ReactNode;
+  displayCurrency: Currency;
+  convert: (a: number, from: Currency, to: Currency) => number;
 }) {
   const pct = Math.min(100, (g.current / Math.max(g.target, 1)) * 100);
   const done = pct >= 100;
+  const fmt = (v: number) => fmtGoalValue(v, g.format, g.currency, displayCurrency, convert);
   return (
     <Card>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
@@ -232,8 +259,8 @@ function GoalCardBody({
       </div>
       <ProgressBar value={pct} color={g.color} height={8} />
       <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text-secondary)", marginTop:8, marginBottom:g.notes ? 8 : 12 }}>
-        <span>Current: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.current, g.format)}</strong></span>
-        <span>Target: <strong style={{ color:"var(--text-primary)" }}>{formatValue(g.target, g.format)}</strong></span>
+        <span>Current: <strong style={{ color:"var(--text-primary)" }}>{fmt(g.current)}</strong></span>
+        <span>Target: <strong style={{ color:"var(--text-primary)" }}>{fmt(g.target)}</strong></span>
       </div>
       {g.notes && (
         <div style={{ fontSize:11, color:"var(--text-secondary)", padding:"8px 10px", borderRadius:7, background:"var(--bg-input)", marginBottom:12, lineHeight:1.5, whiteSpace:"pre-wrap" }}>
@@ -251,12 +278,16 @@ function GoalCard({
   onUpdate,
   onEdit,
   onDelete,
+  displayCurrency,
+  convert,
 }: {
   g: Goal;
   dragEnabled: boolean;
   onUpdate: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  displayCurrency: Currency;
+  convert: (a: number, from: Currency, to: Currency) => number;
 }) {
   const { setNodeRef, style, listeners, attributes } = useSortableItem(g.id);
   // Whole card draggable. The grip is just a passive visual cue.
@@ -285,17 +316,19 @@ function GoalCard({
       {...(dragEnabled ? listeners : {})}
       {...(dragEnabled ? attributes : {})}
     >
-      <GoalCardBody g={g} dragHandle={handle} actions={actions} />
+      <GoalCardBody g={g} dragHandle={handle} actions={actions} displayCurrency={displayCurrency} convert={convert} />
     </div>
   );
 }
 
-function GoalCardPreview({ g }: { g: Goal }) {
+function GoalCardPreview({ g, displayCurrency, convert }: { g: Goal; displayCurrency: Currency; convert: (a: number, from: Currency, to: Currency) => number }) {
   return (
     <div style={overlayCardStyle}>
       <GoalCardBody
         g={g}
         dragHandle={<GripVertical size={14} style={{ color: "var(--text-muted)" }} />}
+        displayCurrency={displayCurrency}
+        convert={convert}
       />
     </div>
   );

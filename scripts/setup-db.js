@@ -289,6 +289,8 @@ async function runAdditiveMigrations() {
     // Goals — optional free-text notes shown on the goal card and in the
     // update modal.
     `ALTER TABLE goals ADD COLUMN IF NOT EXISTS notes TEXT`,
+    // Goals — stored currency (USD/CAD) for goals with format='currency'.
+    `ALTER TABLE goals ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'`,
 
     // Departments — free-text notes shown on the department detail page.
     // Replaces the old "health" field in the edit form.

@@ -8,8 +8,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (b.target  !== undefined) await sql`UPDATE goals SET target = ${Number(b.target) || 0}, updated_at = NOW() WHERE id = ${params.id}`;
     if (b.current !== undefined) await sql`UPDATE goals SET current = ${Number(b.current) || 0}, updated_at = NOW() WHERE id = ${params.id}`;
     if (b.format  !== undefined) await sql`UPDATE goals SET format = ${b.format}, updated_at = NOW() WHERE id = ${params.id}`;
-    if (b.color   !== undefined) await sql`UPDATE goals SET color = ${b.color}, updated_at = NOW() WHERE id = ${params.id}`;
-    if (b.notes   !== undefined) await sql`UPDATE goals SET notes = ${b.notes || null}, updated_at = NOW() WHERE id = ${params.id}`;
+    if (b.color    !== undefined) await sql`UPDATE goals SET color = ${b.color}, updated_at = NOW() WHERE id = ${params.id}`;
+    if (b.currency !== undefined) await sql`UPDATE goals SET currency = ${b.currency || "USD"}, updated_at = NOW() WHERE id = ${params.id}`;
+    if (b.notes    !== undefined) await sql`UPDATE goals SET notes = ${b.notes || null}, updated_at = NOW() WHERE id = ${params.id}`;
     return NextResponse.json({ message: "Updated" });
   } catch (e: unknown) {
     console.error("[goals/[id]/PATCH] error:", e);

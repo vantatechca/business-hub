@@ -275,6 +275,7 @@ export interface Goal {
   target: number;
   current: number;
   format: "number" | "currency" | "percent";
+  currency?: string;
   color: string;
   notes?: string | null;
   sortOrder?: number;
