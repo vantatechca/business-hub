@@ -64,6 +64,8 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
   const { data: session } = useSession();
   const { currency: globalCurrency, setCurrency: setGlobalCurrency } = useCurrency();
   const [col, setCol]       = useState(false);
+  const [sidebarW, setSidebarW] = useState(220);
+  const sidebarDragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [showN, setShowN]   = useState(false);
   const [showCur, setShowCur] = useState(false);
   const [notifs, setNotifs] = useState<Notif[]>([]);
@@ -73,6 +75,19 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
   const [showLogoutCheckin, setShowLogoutCheckin] = useState(false);
   const notifPanelRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMounted(true); }, []);
+
+  // Sidebar resize drag
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!sidebarDragRef.current) return;
+      const newW = Math.max(160, Math.min(400, sidebarDragRef.current.startW + (e.clientX - sidebarDragRef.current.startX)));
+      setSidebarW(newW);
+    };
+    const onUp = () => { sidebarDragRef.current = null; document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
 
   const name  = session?.user?.name ?? "Admin";
   const role  = (session?.user as { role?: string })?.role ?? "member";
@@ -169,10 +184,17 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
     <Tooltip.Provider delayDuration={300}>
       <div style={{display:"flex",height:"100vh",overflow:"hidden",background:"var(--bg-base)"}}>
 
-        <aside style={{width:col?"var(--sidebar-collapsed)":"var(--sidebar-width)",background:"var(--bg-sidebar)",borderRight:"1px solid var(--border-sidebar)",display:"flex",flexDirection:"column",transition:"width .2s ease",flexShrink:0,overflow:"hidden"}}>
+        <aside style={{width:col?"var(--sidebar-collapsed)":`${sidebarW}px`,background:"var(--bg-sidebar)",borderRight:"1px solid var(--border-sidebar)",display:"flex",flexDirection:"column",transition:sidebarDragRef.current?"none":"width .2s ease",flexShrink:0,overflow:"hidden",position:"relative"}}>
+          {/* Drag handle to resize sidebar */}
+          {!col && (
+            <div
+              onMouseDown={e => { sidebarDragRef.current = { startX: e.clientX, startW: sidebarW }; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
+              style={{ position: "absolute", top: 0, right: -2, width: 5, height: "100%", cursor: "col-resize", zIndex: 10 }}
+            />
+          )}
           <div style={{display:"flex",alignItems:"center",gap:10,padding:"13px 12px",borderBottom:"1px solid var(--border-sidebar)",flexShrink:0,minHeight:56}}>
             <div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:"linear-gradient(135deg,#5b8ef8,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center"}}><Building2 size={15} color="#fff"/></div>
-            {!col&&<div><div style={{fontSize:13,fontWeight:800,color:"var(--text-primary)",whiteSpace:"nowrap",letterSpacing:"-0.02em"}}>Business Hub</div><div style={{fontSize:10,color:"var(--text-secondary)"}}>V2 · Command Center</div></div>}
+            {!col&&<div><div style={{fontSize:13,fontWeight:800,color:"var(--text-primary)",whiteSpace:"nowrap",letterSpacing:"-0.02em"}}>Business Hub</div></div>}
           </div>
 
           <nav style={{flex:1,overflowY:"auto",overflowX:"hidden",padding:8}}>
