@@ -60,7 +60,13 @@ const iconBtn: React.CSSProperties = {
 export default function MetricsPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
-  const canEdit = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
+  const userId = (session?.user as { id?: string })?.id;
+  // canEditDetails: full CRUD on metrics (add, edit name/type/etc., delete)
+  const canEditDetails = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
+  // canUpdateValues: can update metric values (numbers). Leads and members
+  // can update values for metrics they are assigned to. The API enforces
+  // the assignment check server-side.
+  const canUpdateValues = true; // everyone logged in can attempt; API enforces assignment
 
   const [metrics, setMetrics]     = useState<Metric[]>([]);
   const [depts, setDepts]         = useState<Department[]>([]);
@@ -74,6 +80,7 @@ export default function MetricsPage() {
   const [form, setForm]           = useState<typeof blank>({ ...blank });
   const [viewing, setViewing]     = useState<Metric | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [myAssignedIds, setMyAssignedIds] = useState<Set<string>>(new Set());
   // Department notes editing
   const [deptNotesModal, setDeptNotesModal] = useState<Department | null>(null);
   const [deptNotesForm, setDeptNotesForm]   = useState({ notes: "", googleSheetUrl: "" });
@@ -84,11 +91,13 @@ export default function MetricsPage() {
     Promise.all([
       fetch("/api/metrics").then(r => r.json()),
       fetch("/api/departments").then(r => r.json()),
-    ]).then(([m, d]) => {
+      userId ? fetch(`/api/metrics?userId=${userId}`).then(r => r.json()) : Promise.resolve({ data: [] }),
+    ]).then(([m, d, myM]) => {
       setMetrics(m.data ?? []);
       setDepts(d.data ?? []);
+      setMyAssignedIds(new Set((myM.data ?? []).map((x: { id: string }) => x.id)));
       setLoading(false);
-    }), []);
+    }), [userId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -246,7 +255,7 @@ export default function MetricsPage() {
   return (
     <AppLayout
       title="Metrics"
-      onNew={canEdit ? () => { setForm({ ...blank, departmentId: depts[0]?.id ?? "" }); setShowAdd(true); } : undefined}
+      onNew={canEditDetails ? () => { setForm({ ...blank, departmentId: depts[0]?.id ?? "" }); setShowAdd(true); } : undefined}
       newLabel="Add Metric"
     >
       <ToastList ts={ts} />
@@ -339,7 +348,7 @@ export default function MetricsPage() {
                 {!isCollapsed && (
                   <>
                     {/* ── Notes / link row ──────────────────── */}
-                    {(hasNotes || canEdit) && (
+                    {(hasNotes || canEditDetails) && (
                       <div style={{
                         display: "flex", alignItems: "flex-start", gap: 10,
                         padding: "10px 18px",
@@ -373,7 +382,7 @@ export default function MetricsPage() {
                             </span>
                           )}
                         </div>
-                        {canEdit && (
+                        {canEditDetails && (
                           <div style={{ display: "flex", gap: 6, flexShrink: 0, marginTop: 2 }}>
                             <button onClick={e => { e.stopPropagation(); openDeptNotes(dept); }} style={iconBtn} title="Edit notes">
                               <Pencil size={14} />
@@ -409,7 +418,7 @@ export default function MetricsPage() {
                         </div>
                         {totalMetrics.map(m => (
                           <TotalMetricRow
-                            key={m.id} m={m} canEdit={canEdit}
+                            key={m.id} m={m} canEditDetails={canEditDetails} canUpdateValue={canUpdateValues && (canEditDetails || myAssignedIds.has(m.id))}
                             onUpdateValue={val => quickUpdate(m.id, val)}
                             onEdit={() => openEdit(m)}
                             onDelete={() => setDeleting(m)}
@@ -452,7 +461,7 @@ export default function MetricsPage() {
                         </div>
                         {dailyMetrics.map(m => (
                           <DailyMetricRow
-                            key={m.id} m={m} canEdit={canEdit}
+                            key={m.id} m={m} canEditDetails={canEditDetails} canUpdateValue={canUpdateValues && (canEditDetails || myAssignedIds.has(m.id))}
                             onUpdateValue={val => quickUpdate(m.id, val)}
                             onEdit={() => openEdit(m)}
                             onDelete={() => setDeleting(m)}
@@ -508,9 +517,9 @@ export default function MetricsPage() {
 
 // ── TOTAL METRIC ROW ──────────────────────────────────────────
 function TotalMetricRow({
-  m, canEdit, onUpdateValue, onEdit, onDelete, onView,
+  m, canEditDetails, canUpdateValue, onUpdateValue, onEdit, onDelete, onView,
 }: {
-  m: Metric; canEdit: boolean;
+  m: Metric; canEditDetails: boolean; canUpdateValue: boolean;
   onUpdateValue: (v: number) => Promise<void>;
   onEdit: () => void; onDelete: () => void; onView: () => void;
 }) {
@@ -559,7 +568,7 @@ function TotalMetricRow({
 
       {/* Value */}
       <div onClick={e => e.stopPropagation()}>
-        {canEdit ? (
+        {canUpdateValue ? (
           <input
             type="number"
             value={inputVal}
@@ -611,7 +620,7 @@ function TotalMetricRow({
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
-        {canEdit && (
+        {canEditDetails && (
           <>
             <button onClick={onEdit} style={iconBtn} title="Edit"><Pencil size={14} /></button>
             <button onClick={onDelete} style={{ ...iconBtn, color: "var(--danger)" }} title="Delete"><Trash2 size={14} /></button>
@@ -624,9 +633,9 @@ function TotalMetricRow({
 
 // ── DAILY METRIC ROW ──────────────────────────────────────────
 function DailyMetricRow({
-  m, canEdit, onUpdateValue, onEdit, onDelete, onView,
+  m, canEditDetails, canUpdateValue, onUpdateValue, onEdit, onDelete, onView,
 }: {
-  m: Metric; canEdit: boolean;
+  m: Metric; canEditDetails: boolean; canUpdateValue: boolean;
   onUpdateValue: (v: number) => Promise<void>;
   onEdit: () => void; onDelete: () => void; onView: () => void;
 }) {
@@ -674,7 +683,7 @@ function DailyMetricRow({
 
       {/* Today */}
       <div onClick={e => e.stopPropagation()}>
-        {canEdit ? (
+        {canUpdateValue ? (
           <input
             type="number"
             value={inputVal}
@@ -712,7 +721,7 @@ function DailyMetricRow({
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
-        {canEdit && (
+        {canEditDetails && (
           <>
             <button onClick={onView} style={iconBtn} title="History"><Calendar size={14} /></button>
             <button onClick={onEdit} style={iconBtn} title="Edit"><Pencil size={14} /></button>

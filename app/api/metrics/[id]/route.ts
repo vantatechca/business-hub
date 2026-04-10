@@ -40,16 +40,37 @@ const toStr = (v: unknown): string | null => (v == null ? null : String(v));
  *      casts; the driver coerces the string to whatever the column type is.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  // Metric edit (including quick value update) is manager+ only.
   const me = await getSessionUser();
-  if (!isManagerOrHigher(me?.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!me) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
   let b: Record<string, unknown>;
   try {
     b = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // Determine which fields the caller wants to change.
+  const VALUE_ONLY_FIELDS = new Set(["currentValue", "source", "userId", "notes"]);
+  const bodyKeys = Object.keys(b);
+  const isValueOnlyUpdate = bodyKeys.every(k => VALUE_ONLY_FIELDS.has(k));
+
+  // Non-managers can ONLY update the value of metrics they are assigned to.
+  // Any other field change requires manager+ role.
+  if (!isManagerOrHigher(me.role)) {
+    if (!isValueOnlyUpdate) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    // Verify the user is assigned to this metric
+    const assignmentRows = await sql`
+      SELECT 1 FROM metric_assignments
+      WHERE metric_id = ${params.id} AND user_id = ${me.id}
+    `;
+    if (!assignmentRows.length) {
+      return NextResponse.json({ error: "Forbidden — you are not assigned to this metric" }, { status: 403 });
+    }
   }
 
   // Only pull values that were actually present in the body. undefined = don't touch.

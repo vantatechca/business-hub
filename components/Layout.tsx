@@ -11,6 +11,7 @@ import { useCurrency } from "@/lib/CurrencyContext";
 import { CURRENCIES } from "@/lib/currency";
 import SendAlertModal from "./SendAlertModal";
 import ReportIssueModal from "./ReportIssueModal";
+import AiAssistant from "./AiAssistant";
 
 // `mgrOnly: true` hides the item from lead and member roles. The middleware
 // also blocks the matching route paths so a manual URL doesn't sneak in.
@@ -399,6 +400,7 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
           notification panel header; here we just need to host it. */}
       <SendAlertModal open={showAlertModal} onClose={() => setShowAlertModal(false)} onSent={fetchNotifs} />
       <ReportIssueModal open={showIssueModal} onClose={() => setShowIssueModal(false)} onCreated={fetchNotifs} />
+      <AiAssistant />
     </Tooltip.Provider>
   );
 }
