@@ -23,10 +23,7 @@ export async function GET() {
       rows = [];
     } else if (isManagerOrHigher(me.role)) {
       rows = await sql`
-        SELECT t.id, t.title, t.priority, t.status, t.department_id, t.assignee_id,
-               t.due_date, t.sort_order, t.created_at, t.updated_at,
-               d.name AS department_name,
-               u.name AS assignee_name
+        SELECT t.*, d.name AS department_name, u.name AS assignee_name
         FROM tasks t
         LEFT JOIN departments d ON d.id = t.department_id
         LEFT JOIN users       u ON u.id = t.assignee_id
@@ -38,10 +35,7 @@ export async function GET() {
       // so the assignee_id = me.id branch still matches personal tasks even
       // when the user has no department memberships.
       rows = await sql`
-        SELECT t.id, t.title, t.priority, t.status, t.department_id, t.assignee_id,
-               t.due_date, t.sort_order, t.created_at, t.updated_at,
-               d.name AS department_name,
-               u.name AS assignee_name
+        SELECT t.*, d.name AS department_name, u.name AS assignee_name
         FROM tasks t
         LEFT JOIN departments d ON d.id = t.department_id
         LEFT JOIN users       u ON u.id = t.assignee_id
@@ -67,24 +61,60 @@ export async function POST(req: NextRequest) {
   const b = await req.json();
   if (!b.title) return NextResponse.json({ error: "title required" }, { status: 400 });
   try {
-    const inserted = await sql`
-      INSERT INTO tasks (title, priority, status, department_id, assignee_id, due_date)
-      VALUES (
-        ${b.title},
-        ${b.priority ?? "medium"},
-        ${b.status ?? "todo"},
-        ${b.departmentId || null},
-        ${b.assigneeId || null},
-        ${b.dueDate || null}
-      )
-      RETURNING id
-    `;
+    // Try with extended columns first; fall back if they don't exist
+    let inserted;
+    try {
+      inserted = await sql`
+        INSERT INTO tasks (title, priority, status, department_id, assignee_id, due_date, notes)
+        VALUES (
+          ${b.title},
+          ${b.priority ?? "medium"},
+          ${b.status ?? "todo"},
+          ${b.departmentId || null},
+          ${b.assigneeId || null},
+          ${b.dueDate || null},
+          ${b.notes ?? null}
+        )
+        RETURNING id
+      `;
+    } catch {
+      inserted = await sql`
+        INSERT INTO tasks (title, priority, status, department_id, assignee_id, due_date)
+        VALUES (
+          ${b.title},
+          ${b.priority ?? "medium"},
+          ${b.status ?? "todo"},
+          ${b.departmentId || null},
+          ${b.assigneeId || null},
+          ${b.dueDate || null}
+        )
+        RETURNING id
+      `;
+    }
     const id = (inserted[0] as Record<string, unknown>).id as string;
+
+    // Send notification if a task was assigned to someone
+    if (b.assigneeId && b.assigneeId !== me?.id) {
+      try {
+        await sql`
+          INSERT INTO notifications (user_id, type, title, body, severity, action_url, sender_id)
+          VALUES (
+            ${b.assigneeId},
+            'metric_alert',
+            ${`New task assigned: ${b.title}`},
+            ${`${me?.name ?? "Admin"} assigned you a new task: "${b.title}". Priority: ${b.priority ?? "medium"}.`},
+            'info',
+            '/tasks',
+            ${me?.id ?? null}
+          )
+        `;
+      } catch (notifErr) {
+        console.warn("[tasks/POST] notification failed:", notifErr);
+      }
+    }
+
     const rows = await sql`
-      SELECT t.id, t.title, t.priority, t.status, t.department_id, t.assignee_id,
-             t.due_date, t.sort_order, t.created_at, t.updated_at,
-             d.name AS department_name,
-             u.name AS assignee_name
+      SELECT t.*, d.name AS department_name, u.name AS assignee_name
       FROM tasks t
       LEFT JOIN departments d ON d.id = t.department_id
       LEFT JOIN users       u ON u.id = t.assignee_id

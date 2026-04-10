@@ -29,6 +29,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       await sql`UPDATE tasks SET due_date = ${raw || null}, updated_at = NOW() WHERE id = ${params.id}`;
     }
     if (b.sortOrder    !== undefined) await sql`UPDATE tasks SET sort_order = ${Number(b.sortOrder) || 0}, updated_at = NOW() WHERE id = ${params.id}`;
+    if (b.notes        !== undefined) {
+      try { await sql`UPDATE tasks SET notes = ${b.notes || null}, updated_at = NOW() WHERE id = ${params.id}`; } catch { /* column may not exist */ }
+    }
+    // Notification when assigning a task to someone new
+    if (b.assigneeId && b.assigneeId !== me?.id) {
+      try {
+        const taskRows = await sql`SELECT title FROM tasks WHERE id = ${params.id}`;
+        const taskName = taskRows.length ? (taskRows[0] as { title: string }).title : "a task";
+        await sql`
+          INSERT INTO notifications (user_id, type, title, body, severity, action_url, sender_id)
+          VALUES (${b.assigneeId}, 'metric_alert', ${`Task assigned: ${taskName}`},
+                  ${`${me?.name ?? "Admin"} assigned you the task "${taskName}".`},
+                  'info', '/tasks', ${me?.id ?? null})
+        `;
+      } catch {}
+    }
     return NextResponse.json({ message: "Updated" });
   } catch (e: unknown) {
     console.error("[tasks/[id]/PATCH] error:", e);

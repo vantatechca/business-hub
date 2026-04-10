@@ -26,7 +26,7 @@ const NAV = [
     {id:"departments",l:"Departments",h:"/departments",I:Network},
     {id:"metrics",l:"Assets",h:"/metrics",I:BarChart2},
     {id:"assignments",l:"Assignments",h:"/assignments",I:Workflow},
-    {id:"team",l:"Team",h:"/team",I:Users},
+    {id:"team",l:"Employees",h:"/team",I:Users},
     {id:"tasks",l:"Tasks",h:"/tasks",I:ListChecks},
     {id:"checkin",l:"Check-Ins",h:"/checkin",I:CalendarCheck},
     {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake, mgrOnly:true},

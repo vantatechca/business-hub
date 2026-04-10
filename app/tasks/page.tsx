@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
-import { Avatar, Badge, Modal, FormField, HubInput, HubSelect, useToast, ToastList } from "@/components/ui/shared";
+import { Avatar, Badge, Modal, FormField, HubInput, HubSelect, HubTextarea, useToast, ToastList } from "@/components/ui/shared";
 import DueAlertBanner from "@/components/DueAlertBanner";
 import type { Task, Department, TeamMember } from "@/lib/types";
 import { formatTaskDueDate, isTaskDueTodayOrPast } from "@/lib/types";
@@ -36,7 +36,7 @@ const COLS = [
 ];
 const PRIORITIES = ["urgent","high","medium","low"];
 const todayIso = () => new Date().toISOString().slice(0, 10);
-const blank = { title:"", priority:"medium", status:"todo", departmentId: "" as string | number, departmentName:"", assigneeId: "" as string, assigneeInitials:"", assigneeName: "", dueDate: todayIso() };
+const blank = { title:"", priority:"medium", status:"todo", departmentId: "" as string | number, departmentName:"", assigneeId: "" as string, assigneeInitials:"", assigneeName: "", dueDate: todayIso(), notes: "" };
 const blankMember = { name: "", role: "", departmentId: "" as string | number, departmentName: "", status: "active", birthday: "" };
 
 export default function TasksPage() {
@@ -153,7 +153,7 @@ export default function TasksPage() {
   };
 
   const save = async () => {
-    if (!form.title || !form.assigneeId) return toast("Title and assignee required", "er");
+    if (!form.title) return toast("Title required", "er");
     await fetch("/api/tasks", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(form) });
     await load(); setShowAdd(false); toast("Task added");
   };
@@ -170,12 +170,23 @@ export default function TasksPage() {
       assigneeInitials: t.assigneeInitials ?? "",
       assigneeName: t.assigneeName ?? "",
       dueDate: t.dueDate ?? "",
+      notes: (t as unknown as { notes?: string }).notes ?? "",
     });
+  };
+
+  const convertToMetric = async (t: Task, mode: "move" | "copy") => {
+    const res = await fetch(`/api/tasks/${t.id}/convert`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); return toast(e.error || "Convert failed", "er"); }
+    await load();
+    toast(mode === "move" ? `"${t.title}" moved to metrics` : `"${t.title}" copied as metric`);
   };
 
   const update = async () => {
     if (!editing) return;
-    if (!form.title || !form.assigneeId) return toast("Title and assignee required", "er");
+    if (!form.title) return toast("Title required", "er");
     const res = await fetch(`/api/tasks/${editing.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -289,7 +300,7 @@ export default function TasksPage() {
           />
         </FormField>
       </div>
-      <FormField label="Assignee">
+      <FormField label="Assignee (optional)">
         <HubSelect
           value={form.assigneeId}
           onChange={e => selectMember(e.target.value)}
@@ -302,6 +313,14 @@ export default function TasksPage() {
           ))}
           <option value="__add_new__">+ Add new team member…</option>
         </HubSelect>
+      </FormField>
+      <FormField label="Notes (optional)">
+        <HubTextarea
+          value={form.notes}
+          onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+          placeholder="Add context, recurrence, goal, or any details…"
+          rows={3}
+        />
       </FormField>
     </>
   );
@@ -386,6 +405,7 @@ export default function TasksPage() {
                   onAdvance={advance}
                   onEdit={openEdit}
                   onDelete={del}
+                  onConvert={convertToMetric}
                   onAdd={() => openAdd(col.key)}
                 />
               );
@@ -432,6 +452,7 @@ function KanbanColumn({
   onAdvance,
   onEdit,
   onDelete,
+  onConvert,
   onAdd,
 }: {
   col: { key: string; label: string; color: string };
@@ -441,6 +462,7 @@ function KanbanColumn({
   onAdvance: (t: Task) => void;
   onEdit: (t: Task) => void;
   onDelete: (id: string | number) => void;
+  onConvert: (t: Task, mode: "move" | "copy") => void;
   onAdd: () => void;
 }) {
   const { setNodeRef } = useDroppable({ id: col.key });
@@ -461,6 +483,7 @@ function KanbanColumn({
             onAdvance={() => onAdvance(t)}
             onEdit={() => onEdit(t)}
             onDelete={() => onDelete(t.id)}
+            onConvert={(mode) => onConvert(t, mode)}
           />
         ))}
       </SortableContext>
@@ -477,14 +500,17 @@ function TaskCardBody({
   onAdvance,
   onEdit,
   onDelete,
+  onConvert,
 }: {
   t: Task;
   dragHandle?: React.ReactNode;
   onAdvance?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onConvert?: (mode: "move" | "copy") => void;
 }) {
   const pr = PR[t.priority];
+  const notes = (t as unknown as { notes?: string }).notes;
   return (
     <div style={{ padding:13 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:9 }}>
@@ -492,20 +518,28 @@ function TaskCardBody({
           {dragHandle}
           <Badge bg={pr.bg} color={pr.c}>{pr.l}</Badge>
         </div>
-        <span title={t.assigneeName || t.assigneeInitials || "Unassigned"} style={{ display: "inline-flex" }}>
-          <Avatar s={t.assigneeInitials ?? "?"} size={24} />
-        </span>
+        {t.assigneeId ? (
+          <span title={t.assigneeName || t.assigneeInitials || "Unassigned"} style={{ display: "inline-flex" }}>
+            <Avatar s={t.assigneeInitials ?? "?"} size={24} />
+          </span>
+        ) : (
+          <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>Unassigned</span>
+        )}
       </div>
       <div style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)", marginBottom:7, lineHeight:1.4 }}>{t.title}</div>
-      <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:10 }}>
+      <div style={{ fontSize:11, color:"var(--text-secondary)", marginBottom:notes ? 6 : 10 }}>
         {t.departmentName || <span style={{ color:"var(--text-muted)", fontStyle:"italic" }}>No department</span>} · <span style={{ color: isTaskDueTodayOrPast(t.dueDate) ? "var(--danger)" : "var(--text-secondary)" }}>⏱ {formatTaskDueDate(t.dueDate)}</span>
       </div>
+      {notes && (
+        <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+          {notes}
+        </div>
+      )}
       {onAdvance && onDelete && (
-        // Stop pointer-down so a click on Advance/Edit/Delete inside the
-        // draggable card doesn't initiate a drag.
-        <div style={{ display:"flex", gap:6 }} onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
-          <button onClick={onAdvance} style={{ flex:1, padding:"5px 7px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>{NL[t.status]}</button>
+        <div style={{ display:"flex", gap:6, flexWrap: "wrap" }} onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+          <button onClick={onAdvance} style={{ flex:1, minWidth: 60, padding:"5px 7px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>{NL[t.status]}</button>
           {onEdit && <button onClick={onEdit} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>}
+          {onConvert && <button onClick={() => { if (confirm("Convert this task to a metric? (Copy)")) onConvert("copy"); }} title="Convert to metric (keeps task)" style={{ padding:"5px 8px", borderRadius:7, border:"1px solid var(--accent)44", background:"var(--accent-bg)", color:"var(--accent)", fontSize:11, cursor:"pointer" }}>→ Asset</button>}
           <button onClick={onDelete} style={{ padding:"5px 8px", borderRadius:7, border:"1px solid rgba(220,38,38,.3)", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
         </div>
       )}
@@ -520,6 +554,7 @@ function TaskCard({
   onAdvance,
   onEdit,
   onDelete,
+  onConvert,
 }: {
   t: Task;
   dragEnabled: boolean;
@@ -527,6 +562,7 @@ function TaskCard({
   onAdvance: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onConvert?: (mode: "move" | "copy") => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: String(t.id), disabled: !dragEnabled });
   // While dragging, visually empty the original slot and let the DragOverlay
@@ -566,6 +602,7 @@ function TaskCard({
         onAdvance={canEdit ? onAdvance : undefined}
         onEdit={canEdit ? onEdit : undefined}
         onDelete={canEdit ? onDelete : undefined}
+        onConvert={canEdit ? onConvert : undefined}
       />
     </div>
   );

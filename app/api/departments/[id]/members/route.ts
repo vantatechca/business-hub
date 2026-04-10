@@ -27,6 +27,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       ON CONFLICT (user_id, department_id) DO UPDATE
         SET role_in_dept = EXCLUDED.role_in_dept
     `;
+    // Send notification to the assigned user
+    try {
+      const deptRows = await sql`SELECT name FROM departments WHERE id = ${params.id}`;
+      const deptName = deptRows.length ? (deptRows[0] as { name: string }).name : "a department";
+      const roleLabel = roleInDept === "lead" ? "Team Lead" : "Member";
+      await sql`
+        INSERT INTO notifications (user_id, type, title, body, severity, action_url, sender_id)
+        VALUES (${userId}, 'metric_alert', ${`Added to ${deptName} as ${roleLabel}`},
+                ${`${me?.name ?? "Admin"} added you to the "${deptName}" department as ${roleLabel}.`},
+                'info', '/departments', ${me?.id ?? null})
+      `;
+    } catch (notifErr) {
+      console.warn("[departments/members/POST] notification failed:", notifErr);
+    }
     await logAudit({
       action: "department.member_assign",
       entityType: "department",
