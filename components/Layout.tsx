@@ -24,7 +24,7 @@ const NAV = [
   ]},
   { s:"OPERATIONS", items:[
     {id:"departments",l:"Departments",h:"/departments",I:Network},
-    {id:"metrics",l:"Metrics",h:"/metrics",I:BarChart2},
+    {id:"metrics",l:"Assets",h:"/metrics",I:BarChart2},
     {id:"assignments",l:"Assignments",h:"/assignments",I:Workflow},
     {id:"team",l:"Team",h:"/team",I:Users},
     {id:"tasks",l:"Tasks",h:"/tasks",I:ListChecks},
