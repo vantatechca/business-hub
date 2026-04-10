@@ -6,7 +6,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // Postgres DECIMAL columns come back as strings; coerce to numbers so the UI
 // can do math and call toFixed without crashing.
-const NUMERIC_FIELDS = ["currentValue", "previousValue", "thirtyDayTotal", "targetValue"] as const;
+const NUMERIC_FIELDS = ["currentValue", "previousValue", "thirtyDayTotal", "weeklyTotal", "overallTotal", "targetValue"] as const;
 function coerceMetric(m: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...m };
   for (const f of NUMERIC_FIELDS) {
@@ -15,6 +15,45 @@ function coerceMetric(m: Record<string, unknown>): Record<string, unknown> {
   // Postgres DATE → "YYYY-MM-DD" string for the UI date picker.
   if (out.dueDate != null) out.dueDate = toDateString(out.dueDate);
   return out;
+}
+
+/**
+ * Enrich metric rows with weeklyTotal and overallTotal computed from
+ * metric_contributions. For metrics with no contribution history, both
+ * default to 0 (falls back to current_value in the UI for overall).
+ */
+async function enrichTotals(metrics: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  if (!metrics.length) return metrics;
+  try {
+    const ids = metrics.map(m => String(m.id ?? m.Id ?? ""));
+    const totalRows = await sql`
+      SELECT
+        metric_id,
+        COALESCE(SUM(value) FILTER (WHERE contribution_date >= CURRENT_DATE - INTERVAL '6 days'), 0) AS weekly_total,
+        COALESCE(SUM(value), 0) AS overall_total
+      FROM metric_contributions
+      WHERE metric_id::text = ANY(${ids}::text[])
+      GROUP BY metric_id
+    `;
+    const totalsMap = new Map<string, { weekly: number; overall: number }>();
+    for (const r of totalRows as { metric_id: string; weekly_total: string; overall_total: string }[]) {
+      totalsMap.set(String(r.metric_id), {
+        weekly: Number(r.weekly_total) || 0,
+        overall: Number(r.overall_total) || 0,
+      });
+    }
+    return metrics.map(m => {
+      const totals = totalsMap.get(String(m.id));
+      return {
+        ...m,
+        weeklyTotal: totals?.weekly ?? 0,
+        overallTotal: totals?.overall ?? Number(m.currentValue) ?? 0,
+      };
+    });
+  } catch (e) {
+    console.warn("[metrics] enrichTotals failed:", e);
+    return metrics.map(m => ({ ...m, weeklyTotal: 0, overallTotal: Number(m.currentValue) ?? 0 }));
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -48,7 +87,9 @@ export async function GET(req: NextRequest) {
         ORDER BY d.sort_order ASC NULLS LAST, m.sort_order ASC
       `;
     }
-    return NextResponse.json({ data: rowsToCamel(rows as Record<string,unknown>[]).map(coerceMetric) });
+    const camelRows = rowsToCamel(rows as Record<string, unknown>[]);
+    const enriched = await enrichTotals(camelRows);
+    return NextResponse.json({ data: enriched.map(coerceMetric) });
   } catch { return NextResponse.json({ error: "DB not configured" }, { status: 503 }); }
 }
 

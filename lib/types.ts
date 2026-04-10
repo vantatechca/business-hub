@@ -79,6 +79,7 @@ export interface Metric {
   id: string; departmentId: string; departmentName?: string; departmentColor?: string;
   name: string; metricType: MetricType; direction: MetricDirection;
   currentValue: number; previousValue: number; thirtyDayTotal: number;
+  weeklyTotal?: number; overallTotal?: number;
   targetValue?: number; unit: string; priorityScore: number;
   notes?: string; dueDate?: string | null; sortOrder: number;
   createdAt?: string; updatedAt?: string;
