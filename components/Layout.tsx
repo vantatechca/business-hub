@@ -12,6 +12,8 @@ import { CURRENCIES } from "@/lib/currency";
 import SendAlertModal from "./SendAlertModal";
 import ReportIssueModal from "./ReportIssueModal";
 import AiAssistant from "./AiAssistant";
+import CheckInModal from "./CheckInModal";
+import { hasCheckedInToday } from "./CheckInGate";
 
 // `mgrOnly: true` hides the item from lead and member roles. The middleware
 // also blocks the matching route paths so a manual URL doesn't sneak in.
@@ -68,14 +70,26 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
   const [mounted, setMounted] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
+  const [showLogoutCheckin, setShowLogoutCheckin] = useState(false);
   const notifPanelRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMounted(true); }, []);
 
   const name  = session?.user?.name ?? "Admin";
   const role  = (session?.user as { role?: string })?.role ?? "member";
+  const layoutUserId = (session?.user as { id?: string })?.id;
+  const requiresCheckin = (session?.user as { requiresCheckin?: boolean })?.requiresCheckin;
   const ini   = name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
   const unread = notifs.filter(n => !n.read).length;
   const isDark = mounted && theme === "dark";
+
+  const handleSignOut = () => {
+    const exemptRole = role === "super_admin" || role === "admin";
+    if (!exemptRole && requiresCheckin && !hasCheckedInToday(layoutUserId)) {
+      setShowLogoutCheckin(true);
+    } else {
+      signOut({ callbackUrl: "/login" });
+    }
+  };
   // Anyone above member can broadcast alerts.
   const canSendAlerts = role === "lead" || role === "manager" || role === "leader" || role === "admin" || role === "super_admin";
 
@@ -216,7 +230,7 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
                 <div style={{fontSize:10,color:ROLE_COLOR[role] ?? "var(--text-secondary)",fontWeight:600,textTransform:"capitalize"}}>{role === "super_admin" ? "Super Admin" : role}</div>
               </div>}
             </Link>
-            <button onClick={()=>signOut({callbackUrl:"/login"})} className={`nav-item ${col?"justify-center":""}`} style={{fontSize:12,marginTop:2}}><LogOut size={14}/>{!col&&" Sign out"}</button>
+            <button onClick={handleSignOut} className={`nav-item ${col?"justify-center":""}`} style={{fontSize:12,marginTop:2}}><LogOut size={14}/>{!col&&" Sign out"}</button>
             <button onClick={()=>setCol(v=>!v)} className={`nav-item ${col?"justify-center":""}`} style={{fontSize:11,marginTop:2,color:"var(--text-muted)"}}>
               <span style={{fontSize:13}}>{col?"→":"←"}</span>{!col&&<span> Collapse</span>}
             </button>
@@ -402,6 +416,43 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
       <SendAlertModal open={showAlertModal} onClose={() => setShowAlertModal(false)} onSent={fetchNotifs} />
       <ReportIssueModal open={showIssueModal} onClose={() => setShowIssueModal(false)} onCreated={fetchNotifs} />
       <AiAssistant />
+
+      {/* Check-in prompt on logout — shown when user tries to sign out
+          without having submitted their daily check-in. */}
+      {showLogoutCheckin && (
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setShowLogoutCheckin(false); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <div style={{
+            background: "var(--bg-card)", border: "1px solid var(--border-card)",
+            borderRadius: 16, padding: "24px 28px", width: 420, maxWidth: "95vw",
+            boxShadow: "var(--shadow-modal)", textAlign: "center",
+          }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📝</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text-primary)", marginBottom: 6 }}>
+              You haven&apos;t checked in today
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
+              Would you like to submit your daily check-in before signing out?
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => { setShowLogoutCheckin(false); signOut({ callbackUrl: "/login" }); }}
+                style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              >
+                Sign out anyway
+              </button>
+              <button
+                onClick={() => { setShowLogoutCheckin(false); /* Open the check-in modal via the dashboard gate */ window.location.href = "/dashboard"; }}
+                style={{ flex: 1, padding: "10px 14px", borderRadius: 10, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              >
+                Check in first
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Tooltip.Provider>
   );
 }

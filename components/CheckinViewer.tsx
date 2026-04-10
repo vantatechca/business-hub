@@ -144,14 +144,16 @@ function Section({ title, body }: { title: string; body: string }) {
 // Standalone modal viewer for a single check-in (loads by id)
 export default function CheckinViewer({ checkin, open, onClose, onReviewed }: Props) {
   const { data: session } = useSession();
+  const userId = (session?.user as { id?: string })?.id;
   const role = (session?.user as { role?: string } | undefined)?.role ?? "member";
-  // Only manager / admin / super_admin can review. Lead + member cannot.
-  // "leader" is kept for back-compat with mixed-state deployments.
   const canReview = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
 
   const [hydrated, setHydrated] = useState<DailyCheckin | null>(checkin);
   const [loading, setLoading] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -195,6 +197,41 @@ export default function CheckinViewer({ checkin, open, onClose, onReviewed }: Pr
     }
   };
 
+  // Can the current user edit/delete this check-in?
+  const isOwner = userId && hydrated?.userId === userId;
+  const isReviewed = hydrated?.status === "reviewed";
+  const checkinTime = hydrated?.checkinDate ? new Date(hydrated.checkinDate + "T00:00:00").getTime() : 0;
+  const within24h = (Date.now() - checkinTime) < 48 * 60 * 60 * 1000; // 48h buffer for timezone
+  const canOwnerEdit = isOwner && !isReviewed && within24h;
+
+  const handleDelete = async () => {
+    if (!hydrated?.id) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/checkin/${hydrated.id}`, { method: "DELETE" });
+      if (res.ok) {
+        onReviewed?.(hydrated.id); // triggers refresh in parent
+        onClose();
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!hydrated?.id || !editText.trim()) return;
+    try {
+      await fetch(`/api/checkin/${hydrated.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawResponse: editText, wins: editText }),
+      });
+      setHydrated(p => p ? { ...p, rawResponse: editText, wins: editText } : p);
+      setEditing(false);
+      onReviewed?.(hydrated.id);
+    } catch { /* ignore */ }
+  };
+
   if (!open) return null;
 
   const alreadyReviewed = hydrated?.status === "reviewed";
@@ -225,29 +262,84 @@ export default function CheckinViewer({ checkin, open, onClose, onReviewed }: Pr
             </div>
           ) : (
             <>
-              <CheckinDetail checkin={hydrated} />
-              {canReview && hydrated && (
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-divider)" }}>
-                  {alreadyReviewed ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--success)", fontWeight: 700 }}>
-                      <CheckCircle2 size={14} /> Reviewed
-                    </div>
-                  ) : (
-                    <button
-                      onClick={markReviewed}
-                      disabled={reviewing}
-                      style={{
-                        padding: "8px 16px", borderRadius: 8,
-                        background: "var(--success)", color: "#fff",
-                        border: "none", fontSize: 12, fontWeight: 700,
-                        cursor: reviewing ? "not-allowed" : "pointer",
-                        display: "inline-flex", alignItems: "center", gap: 6,
-                        opacity: reviewing ? 0.6 : 1,
-                      }}
-                    >
-                      <CheckCircle2 size={14} /> {reviewing ? "Marking…" : "Mark as Reviewed"}
-                    </button>
-                  )}
+              {/* Inline edit mode */}
+              {editing ? (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".07em", marginBottom: 8 }}>EDIT CHECK-IN</div>
+                  <textarea
+                    value={editText}
+                    onChange={e => setEditText(e.target.value)}
+                    rows={6}
+                    style={{
+                      width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 12,
+                      background: "var(--bg-input)", border: "1px solid var(--border-card)",
+                      color: "var(--text-primary)", outline: "none", resize: "vertical",
+                      fontFamily: "inherit", lineHeight: 1.5,
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+                    <button onClick={() => setEditing(false)} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+                    <button onClick={handleSaveEdit} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save Changes</button>
+                  </div>
+                </div>
+              ) : (
+                <CheckinDetail checkin={hydrated} />
+              )}
+
+              {/* Action buttons */}
+              {hydrated && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-divider)", gap: 8 }}>
+                  {/* Owner edit/delete (within 24h, not reviewed) */}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {canOwnerEdit && !editing && (
+                      <>
+                        <button
+                          onClick={() => { setEditText(hydrated.rawResponse ?? hydrated.wins ?? ""); setEditing(true); }}
+                          style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={handleDelete}
+                          disabled={deleting}
+                          style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, fontWeight: 700, cursor: "pointer", opacity: deleting ? 0.5 : 1 }}
+                        >
+                          {deleting ? "Deleting…" : "Delete"}
+                        </button>
+                      </>
+                    )}
+                    {isOwner && !canOwnerEdit && !canReview && (
+                      <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                        {isReviewed ? "Reviewed — no longer editable" : "Edit window expired"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Reviewer action */}
+                  <div>
+                    {canReview && (
+                      alreadyReviewed ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--success)", fontWeight: 700 }}>
+                          <CheckCircle2 size={14} /> Reviewed
+                        </div>
+                      ) : (
+                        <button
+                          onClick={markReviewed}
+                          disabled={reviewing}
+                          style={{
+                            padding: "8px 16px", borderRadius: 8,
+                            background: "var(--success)", color: "#fff",
+                            border: "none", fontSize: 12, fontWeight: 700,
+                            cursor: reviewing ? "not-allowed" : "pointer",
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            opacity: reviewing ? 0.6 : 1,
+                          }}
+                        >
+                          <CheckCircle2 size={14} /> {reviewing ? "Marking…" : "Mark as Reviewed"}
+                        </button>
+                      )
+                    )}
+                  </div>
                 </div>
               )}
             </>
