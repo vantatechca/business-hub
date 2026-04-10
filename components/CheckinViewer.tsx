@@ -200,8 +200,10 @@ export default function CheckinViewer({ checkin, open, onClose, onReviewed }: Pr
   // Can the current user edit/delete this check-in?
   const isOwner = userId && hydrated?.userId === userId;
   const isReviewed = hydrated?.status === "reviewed";
-  const checkinTime = hydrated?.checkinDate ? new Date(hydrated.checkinDate + "T00:00:00").getTime() : 0;
-  const within24h = (Date.now() - checkinTime) < 48 * 60 * 60 * 1000; // 48h buffer for timezone
+  const submissionTime = hydrated?.submittedAt
+    ? new Date(hydrated.submittedAt).getTime()
+    : hydrated?.createdAt ? new Date(hydrated.createdAt).getTime() : 0;
+  const within24h = submissionTime > 0 && (Date.now() - submissionTime) < 24 * 60 * 60 * 1000;
   const canOwnerEdit = isOwner && !isReviewed && within24h;
 
   const handleDelete = async () => {

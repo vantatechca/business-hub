@@ -52,7 +52,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
   try {
     const existing = await sql`
-      SELECT dc.id, dc.user_id, dc.status, dc.checkin_date, u.timezone
+      SELECT dc.id, dc.user_id, dc.status, dc.checkin_date, dc.submitted_at, dc.created_at, u.timezone
       FROM daily_checkins dc
       JOIN users u ON u.id = dc.user_id
       WHERE dc.id = ${params.id}
@@ -60,6 +60,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!existing.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const row = existing[0] as {
       id: string; user_id: string; status: string; checkin_date: string | Date; timezone: string;
+      submitted_at: string | Date | null; created_at: string | Date;
     };
 
     const isOwner = row.user_id === me.id;
@@ -78,13 +79,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           { status: 403 },
         );
       }
-      // 24-hour edit window: users can edit their check-in within 24 hours
-      // of the check-in date, as long as it hasn't been reviewed.
-      const checkinDate = typeof row.checkin_date === "string"
-        ? new Date(row.checkin_date + "T00:00:00")
-        : new Date(row.checkin_date);
-      const hoursSince = (Date.now() - checkinDate.getTime()) / (1000 * 60 * 60);
-      if (hoursSince > 48) { // 48h buffer to account for timezone differences
+      // 24-hour edit window from the actual submission time (not the date).
+      const submissionTime = row.submitted_at
+        ? new Date(row.submitted_at).getTime()
+        : new Date(row.created_at).getTime();
+      const hoursSince = (Date.now() - submissionTime) / (1000 * 60 * 60);
+      if (hoursSince > 24) {
         return NextResponse.json(
           { error: "You can only edit a check-in within 24 hours of submission." },
           { status: 403 },
@@ -194,13 +194,13 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   try {
     const existing = await sql`
-      SELECT dc.id, dc.user_id, dc.status, dc.checkin_date, u.timezone
+      SELECT dc.id, dc.user_id, dc.status, dc.checkin_date, dc.submitted_at, dc.created_at, u.timezone
       FROM daily_checkins dc
       JOIN users u ON u.id = dc.user_id
       WHERE dc.id = ${params.id}
     `;
     if (!existing.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const row = existing[0] as { id: string; user_id: string; status: string; checkin_date: string | Date; timezone: string };
+    const row = existing[0] as { id: string; user_id: string; status: string; checkin_date: string | Date; timezone: string; submitted_at: string | Date | null; created_at: string | Date };
 
     const isOwner = row.user_id === me.id;
     const isManager = canReviewCheckins(me.role);
@@ -209,16 +209,16 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Owner can only delete if not reviewed and within 24 hours
+    // Owner can only delete if not reviewed and within 24 hours of submission
     if (isOwner && !isManager) {
       if (row.status === "reviewed") {
         return NextResponse.json({ error: "Cannot delete a reviewed check-in." }, { status: 403 });
       }
-      const checkinDate = typeof row.checkin_date === "string"
-        ? new Date(row.checkin_date + "T00:00:00")
-        : new Date(row.checkin_date);
-      const hoursSince = (Date.now() - checkinDate.getTime()) / (1000 * 60 * 60);
-      if (hoursSince > 48) {
+      const submissionTime = row.submitted_at
+        ? new Date(row.submitted_at).getTime()
+        : new Date(row.created_at).getTime();
+      const hoursSince = (Date.now() - submissionTime) / (1000 * 60 * 60);
+      if (hoursSince > 24) {
         return NextResponse.json({ error: "Can only delete within 24 hours." }, { status: 403 });
       }
     }

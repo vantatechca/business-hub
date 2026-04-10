@@ -108,8 +108,8 @@ export default function TeamPage() {
   const rows = team.filter(m =>
     (m.name.toLowerCase().includes(q.toLowerCase())
       || (m.jobTitle ?? "").toLowerCase().includes(q.toLowerCase())
-      || (m.departments ?? []).some(d => d.name.toLowerCase().includes(q.toLowerCase())))
-    && (!df || (m.departments ?? []).some(d => d.name === df))
+      || (m.departments ?? []).some(d => (d.name ?? "").toLowerCase().includes(q.toLowerCase())))
+    && (!df || (m.departments ?? []).some(d => (d.name ?? "") === df))
   );
 
   const openAdd = () => {

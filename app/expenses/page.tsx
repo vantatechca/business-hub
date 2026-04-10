@@ -14,6 +14,7 @@ const blank = {
   departmentId: "" as string | number,
   departmentName: "",
   description: "",
+  entryDate: new Date().toISOString().slice(0, 10),
   month: MONTHS[new Date().getMonth()],
   year: new Date().getFullYear(),
 };
@@ -97,6 +98,7 @@ export default function ExpensesPage() {
       departmentId: e.departmentId ?? "",
       departmentName: e.departmentName ?? "",
       description: e.description,
+      entryDate: (e as unknown as { entryDate?: string }).entryDate ?? "",
       month: e.month,
       year: e.year,
     });
@@ -198,7 +200,23 @@ export default function ExpensesPage() {
           </HubSelect>
         </FormField>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        <FormField label="Date">
+          <HubInput
+            type="date"
+            value={form.entryDate}
+            onChange={e => {
+              const d = e.target.value;
+              const dt = d ? new Date(d + "T00:00:00") : new Date();
+              setForm(p => ({
+                ...p,
+                entryDate: d,
+                month: MONTHS[dt.getMonth()],
+                year: dt.getFullYear(),
+              }));
+            }}
+          />
+        </FormField>
         <FormField label="Month">
           <HubSelect value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))}>
             {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
@@ -206,6 +224,7 @@ export default function ExpensesPage() {
         </FormField>
         <FormField label="Department">
           <HubSelect value={form.departmentId} onChange={e => selectDept(e.target.value)}>
+            <option value="">General</option>
             {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </HubSelect>
         </FormField>
