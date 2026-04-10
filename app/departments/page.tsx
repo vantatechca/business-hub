@@ -8,7 +8,32 @@ import { Sortable, useSortableItem, overlayCardStyle } from "@/components/ui/Sor
 import { GripVertical } from "lucide-react";
 import type { Department } from "@/lib/types";
 
-const ICONS = ["💼","⚙️","📣","📊","👥","🔧","🎯","⭐","⚖️","🏗️","🌐","💡","🔬","📦","🎨","🧬","🚀","💰","📱","🎓"];
+const ICONS = [
+  // Work & business
+  "💼","📊","📈","📉","📋","📝","📌","📎","🗂️","📁","📂","🗃️","🗄️","📇",
+  // Tools & tech
+  "⚙️","🔧","🔨","🛠️","⛏️","🔩","⚡","🔌","💻","🖥️","⌨️","🖱️","📱","☎️",
+  // Money & finance
+  "💰","💵","💴","💶","💷","💳","🪙","💎","🏦","📊","📈","🧾",
+  // Communication & marketing
+  "📣","📢","📧","✉️","📨","📬","💬","💭","📞","📡",
+  // People & team
+  "👥","👤","🧑","👨","👩","🧑‍💼","👨‍💼","👩‍💼","🤝",
+  // Goals & achievement
+  "🎯","⭐","🌟","✨","🏆","🥇","🏅","🎖️","🏁",
+  // Ideas & creativity
+  "💡","🧠","🎨","✏️","🖊️","🖋️","📐","📏","🎭",
+  // Operations & logistics
+  "📦","🏗️","🏭","🚚","🚛","✈️","🚀","🛒","🛍️",
+  // Science & research
+  "🔬","🧪","🧬","🌡️","🩺","💊",
+  // Web & global
+  "🌐","🗺️","🧭","📍","🚩","🗽",
+  // Documents & files
+  "📄","📃","📑","🗒️","📒","📓","📔","📕","📗","📘","📙","📚",
+  // Misc useful
+  "⚖️","🔒","🔑","🔔","⏰","⏳","📅","🗓️","🎓","🔥","💧","⚠️","✅","❌","❓","❗",
+];
 const COLORS = ["#5b8ef8","#34d399","#a78bfa","#fbbf24","#f87171","#22d3ee","#84cc16","#fb923c","#e879f9","#6366f1"];
 
 const blank = { name: "", head: "", icon: "💼", color: COLORS[0], notes: "" };
@@ -103,17 +128,28 @@ export default function DepartmentsPage() {
         />
       </FormField>
       <FormField label="Icon">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {ICONS.map(ic => (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(10, 1fr)",
+          gap: 6,
+          maxHeight: 180,
+          overflowY: "auto",
+          padding: 6,
+          border: "1px solid var(--border-card)",
+          borderRadius: 8,
+          background: "var(--bg-input)",
+        }}>
+          {ICONS.map((ic, i) => (
             <button
-              key={ic}
+              key={`${ic}-${i}`}
               type="button"
               onClick={() => setForm(p => ({ ...p, icon: ic }))}
               style={{
-                width: 34, height: 34, borderRadius: 8,
-                border: `2px solid ${form.icon === ic ? "var(--accent)" : "var(--border-card)"}`,
-                background: "var(--bg-card)",
+                width: 32, height: 32, borderRadius: 6,
+                border: `2px solid ${form.icon === ic ? "var(--accent)" : "transparent"}`,
+                background: form.icon === ic ? "var(--accent-bg)" : "var(--bg-card)",
                 fontSize: 16, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}
             >
               {ic}

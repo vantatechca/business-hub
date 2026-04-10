@@ -30,8 +30,46 @@ const COLS = [
   { key: "done",        label: "Done",        color: "var(--success)" },
 ];
 const PRIORITIES = ["urgent", "high", "medium", "low"];
-const ICONS = ["💼","⚙️","📣","📊","👥","🔧","🎯","⭐","⚖️","🏗️","🌐","💡","🔬","📦","🎨","🧬","🚀","💰","📱","🎓"];
+const ICONS = [
+  "💼","📊","📈","📉","📋","📝","📌","📎","🗂️","📁","📂","🗃️","🗄️","📇",
+  "⚙️","🔧","🔨","🛠️","⛏️","🔩","⚡","🔌","💻","🖥️","⌨️","🖱️","📱","☎️",
+  "💰","💵","💴","💶","💷","💳","🪙","💎","🏦","🧾",
+  "📣","📢","📧","✉️","📨","📬","💬","💭","📞","📡",
+  "👥","👤","🧑","👨","👩","🧑‍💼","👨‍💼","👩‍💼","🤝",
+  "🎯","⭐","🌟","✨","🏆","🥇","🏅","🎖️","🏁",
+  "💡","🧠","🎨","✏️","🖊️","🖋️","📐","📏","🎭",
+  "📦","🏗️","🏭","🚚","🚛","✈️","🚀","🛒","🛍️",
+  "🔬","🧪","🧬","🌡️","🩺","💊",
+  "🌐","🗺️","🧭","📍","🚩","🗽",
+  "📄","📃","📑","🗒️","📒","📓","📔","📕","📗","📘","📙","📚",
+  "⚖️","🔒","🔑","🔔","⏰","⏳","📅","🗓️","🎓","🔥","💧","⚠️","✅","❌","❓","❗",
+];
 const COLORS = ["#5b8ef8","#34d399","#a78bfa","#fbbf24","#f87171","#22d3ee","#84cc16","#fb923c","#e879f9","#6366f1"];
+
+/** Auto-linkify URLs in plain text — renders http/https links as clickable. */
+function Linkify({ text }: { text: string }) {
+  if (!text) return null;
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^https?:\/\//.test(part) ? (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--accent)", textDecoration: "underline", wordBreak: "break-all" }}
+          >
+            {part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const blankTask = {
@@ -464,15 +502,27 @@ export default function DepartmentDetailPage() {
         </HubSelect>
       </FormField>
       <FormField label="Icon">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {ICONS.map(ic => (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(10, 1fr)",
+          gap: 6,
+          maxHeight: 180,
+          overflowY: "auto",
+          padding: 6,
+          border: "1px solid var(--border-card)",
+          borderRadius: 8,
+          background: "var(--bg-input)",
+        }}>
+          {ICONS.map((ic, i) => (
             <button
-              key={ic}
+              key={`${ic}-${i}`}
               onClick={() => setDeptForm(p => ({ ...p, icon: ic }))}
               style={{
-                width: 34, height: 34, borderRadius: 8,
-                border: `2px solid ${deptForm.icon === ic ? "var(--accent)" : "var(--border-card)"}`,
-                background: "var(--bg-input)", fontSize: 16, cursor: "pointer",
+                width: 32, height: 32, borderRadius: 6,
+                border: `2px solid ${deptForm.icon === ic ? "var(--accent)" : "transparent"}`,
+                background: deptForm.icon === ic ? "var(--accent-bg)" : "var(--bg-card)",
+                fontSize: 16, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}
             >
               {ic}
@@ -577,7 +627,9 @@ export default function DepartmentDetailPage() {
       {dept.notes && (
         <div style={{ marginTop: 12, padding: "14px 18px", borderRadius: 12, background: "var(--bg-card)", border: "1px solid var(--border-card)" }}>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".07em", color: "var(--text-muted)", marginBottom: 8 }}>NOTES</div>
-          <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{dept.notes}</div>
+          <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "break-word" }}>
+            <Linkify text={dept.notes} />
+          </div>
         </div>
       )}
 
