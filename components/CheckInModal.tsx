@@ -122,13 +122,36 @@ export default function CheckInModal({ open, onClose, onComplete, canDefer = tru
       }),
     });
     const ciData = await ciRes.json();
+    const checkinId = ciData.data?.id;
 
-    // 2. Apply confirmed metric updates
-    if (ciData.data?.id) {
-      await fetch(`/api/checkin/${ciData.data.id}`, {
+    // 2. Apply confirmed metric updates via contribution API.
+    //    Each confirmed metric is submitted as a contribution so that
+    //    multiple assignees' values are summed for the overall metric.
+    for (const m of confirmedMetrics) {
+      if (!m.confirmed || !m.metricId) continue;
+      const value = m.newValue ?? m.delta ?? 0;
+      if (value === 0 && m.delta === 0) continue;
+      try {
+        await fetch("/api/metrics/contribute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            metricId: m.metricId,
+            value,
+            checkinId: checkinId || undefined,
+          }),
+        });
+      } catch {
+        // Non-fatal: continue with remaining metrics
+      }
+    }
+
+    // 3. Store confirmed metrics on the check-in record for audit
+    if (checkinId) {
+      await fetch(`/api/checkin/${checkinId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, confirmedMetrics, status: "ai_processed" }),
+        body: JSON.stringify({ aiExtractedMetrics: confirmedMetrics }),
       });
     }
 

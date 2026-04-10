@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import AppLayout from "@/components/Layout";
@@ -52,6 +53,11 @@ export default function DepartmentDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const deptId = params?.id;
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string })?.role ?? "member";
+  // Only manager+ can edit department details, add tasks, add metrics, manage team.
+  // Lead and member get a read-only view.
+  const canEdit = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
 
   const [dept, setDept] = useState<Department | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -552,14 +558,16 @@ export default function DepartmentDetailPage() {
               <span>📊 <strong style={{ color: "var(--text-primary)" }}>{myMetrics.length}</strong> metric{myMetrics.length === 1 ? "" : "s"}</span>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <button
-              onClick={openEditDept}
-              style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-            >
-              <Pencil size={13} /> Edit Department
-            </button>
-          </div>
+          {canEdit && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <button
+                onClick={openEditDept}
+                style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Pencil size={13} /> Edit Department
+              </button>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -632,12 +640,14 @@ export default function DepartmentDetailPage() {
       {/* Tasks header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>Tasks</div>
-        <button
-          onClick={() => openAddTask("todo")}
-          style={{ padding: "6px 12px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
-        >
-          <Plus size={12} /> Add Task
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => openAddTask("todo")}
+            style={{ padding: "6px 12px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+          >
+            <Plus size={12} /> Add Task
+          </button>
+        )}
       </div>
 
       {/* Tasks columns */}
@@ -670,36 +680,40 @@ export default function DepartmentDetailPage() {
                       <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 10 }}>
                         <span style={{ color: isTaskDueTodayOrPast(t.dueDate) ? "var(--danger)" : "var(--text-secondary)" }}>⏱ {formatTaskDueDate(t.dueDate)}</span>
                       </div>
-                      <div style={{ display: "flex", gap: 5 }}>
-                        <button
-                          onClick={() => advanceTask(t)}
-                          style={{ flex: 1, padding: "5px 7px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}
-                        >
-                          {NL[t.status]}
-                        </button>
-                        <button
-                          onClick={() => openEditTask(t)}
-                          style={{ padding: "5px 8px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setDeletingTask(t)}
-                          style={{ padding: "5px 8px", borderRadius: 7, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, cursor: "pointer" }}
-                        >
-                          ✕
-                        </button>
-                      </div>
+                      {canEdit && (
+                        <div style={{ display: "flex", gap: 5 }}>
+                          <button
+                            onClick={() => advanceTask(t)}
+                            style={{ flex: 1, padding: "5px 7px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}
+                          >
+                            {NL[t.status]}
+                          </button>
+                          <button
+                            onClick={() => openEditTask(t)}
+                            style={{ padding: "5px 8px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeletingTask(t)}
+                            style={{ padding: "5px 8px", borderRadius: 7, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, cursor: "pointer" }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })
               )}
-              <button
-                onClick={() => openAddTask(col.key)}
-                style={{ padding: 9, borderRadius: 9, border: "1px dashed var(--border-card)", background: "transparent", color: "var(--text-muted)", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer" }}
-              >
-                + Add task
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => openAddTask(col.key)}
+                  style={{ padding: 9, borderRadius: 9, border: "1px dashed var(--border-card)", background: "transparent", color: "var(--text-muted)", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer" }}
+                >
+                  + Add task
+                </button>
+              )}
             </div>
           );
         })}
@@ -711,7 +725,7 @@ export default function DepartmentDetailPage() {
       )}
 
       {tab === "team" && (
-        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} onRemoveMember={removeMember} onChangeRole={changeMemberRoleInDept} />
+        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} onRemoveMember={removeMember} onChangeRole={changeMemberRoleInDept} canEdit={canEdit} />
       )}
 
       {tab === "expenses" && (
@@ -904,15 +918,15 @@ function DeptTeamTab({
   onAddMember,
   onRemoveMember,
   onChangeRole,
+  canEdit = true,
 }: {
   team: DeptMember[];
   departmentId: string;
   departmentName: string;
   onAddMember: () => void;
   onRemoveMember: (m: TeamMember) => void;
-  // Toggle between Team Lead and Member without removing the user from the
-  // department. Hits the same POST endpoint with ON CONFLICT UPDATE.
   onChangeRole: (m: TeamMember, next: "lead" | "member") => void;
+  canEdit?: boolean;
 }) {
   void departmentId;
   const [confirming, setConfirming] = useState<TeamMember | null>(null);
@@ -924,12 +938,14 @@ function DeptTeamTab({
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>
           {departmentName} · {leads} team lead{leads === 1 ? "" : "s"} · {members} member{members === 1 ? "" : "s"}
         </div>
-        <button
-          onClick={onAddMember}
-          style={{ padding: "6px 12px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
-        >
-          <Plus size={12} /> Add Member
-        </button>
+        {canEdit && (
+          <button
+            onClick={onAddMember}
+            style={{ padding: "6px 12px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+          >
+            <Plus size={12} /> Add Member
+          </button>
+        )}
       </div>
       {team.length === 0 ? (
         <EmptyState icon="👥" title="No members yet" desc="Add team leads and members so they appear here." />
@@ -958,24 +974,26 @@ function DeptTeamTab({
                         {isLead ? "Team Lead" : "Member"}
                       </span>
                     </td>
-                    <td style={{ textAlign: "right" }}>
-                      <div style={{ display: "inline-flex", gap: 5 }}>
-                        <button
-                          onClick={() => onChangeRole(m, isLead ? "member" : "lead")}
-                          title={isLead ? "Demote to Member" : "Promote to Team Lead"}
-                          style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
-                        >
-                          {isLead ? "Make Member" : "Make Team Lead"}
-                        </button>
-                        <button
-                          onClick={() => setConfirming(m)}
-                          title="Remove from department"
-                          style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </td>
+                    {canEdit && (
+                      <td style={{ textAlign: "right" }}>
+                        <div style={{ display: "inline-flex", gap: 5 }}>
+                          <button
+                            onClick={() => onChangeRole(m, isLead ? "member" : "lead")}
+                            title={isLead ? "Demote to Member" : "Promote to Team Lead"}
+                            style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                          >
+                            {isLead ? "Make Member" : "Make Team Lead"}
+                          </button>
+                          <button
+                            onClick={() => setConfirming(m)}
+                            title="Remove from department"
+                            style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
