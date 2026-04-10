@@ -78,14 +78,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           { status: 403 },
         );
       }
-      // "Same day in user's timezone" check
-      const checkinDateStr = typeof row.checkin_date === "string"
-        ? row.checkin_date.slice(0, 10)
-        : new Date(row.checkin_date).toISOString().slice(0, 10);
-      const todayStr = dateInTimezone(row.timezone);
-      if (checkinDateStr !== todayStr) {
+      // 24-hour edit window: users can edit their check-in within 24 hours
+      // of the check-in date, as long as it hasn't been reviewed.
+      const checkinDate = typeof row.checkin_date === "string"
+        ? new Date(row.checkin_date + "T00:00:00")
+        : new Date(row.checkin_date);
+      const hoursSince = (Date.now() - checkinDate.getTime()) / (1000 * 60 * 60);
+      if (hoursSince > 48) { // 48h buffer to account for timezone differences
         return NextResponse.json(
-          { error: "You can only edit a check-in on the same day it was submitted." },
+          { error: "You can only edit a check-in within 24 hours of submission." },
           { status: 403 },
         );
       }
@@ -173,6 +174,67 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   } catch(e: unknown) {
     console.error("[checkin/[id]/PATCH] error:", e);
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
+}
+
+/**
+ * DELETE /api/checkin/[id]
+ *
+ * Allows the owner to delete their check-in within 24 hours, as long as
+ * it hasn't been reviewed. Managers+ can delete any check-in.
+ */
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const me = await getSessionUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!UUID_RE.test(params.id)) {
+    return NextResponse.json({ message: "Deleted" });
+  }
+
+  try {
+    const existing = await sql`
+      SELECT dc.id, dc.user_id, dc.status, dc.checkin_date, u.timezone
+      FROM daily_checkins dc
+      JOIN users u ON u.id = dc.user_id
+      WHERE dc.id = ${params.id}
+    `;
+    if (!existing.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const row = existing[0] as { id: string; user_id: string; status: string; checkin_date: string | Date; timezone: string };
+
+    const isOwner = row.user_id === me.id;
+    const isManager = canReviewCheckins(me.role);
+
+    if (!isOwner && !isManager) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Owner can only delete if not reviewed and within 24 hours
+    if (isOwner && !isManager) {
+      if (row.status === "reviewed") {
+        return NextResponse.json({ error: "Cannot delete a reviewed check-in." }, { status: 403 });
+      }
+      const checkinDate = typeof row.checkin_date === "string"
+        ? new Date(row.checkin_date + "T00:00:00")
+        : new Date(row.checkin_date);
+      const hoursSince = (Date.now() - checkinDate.getTime()) / (1000 * 60 * 60);
+      if (hoursSince > 48) {
+        return NextResponse.json({ error: "Can only delete within 24 hours." }, { status: 403 });
+      }
+    }
+
+    await sql`DELETE FROM daily_checkins WHERE id = ${params.id}`;
+    await logAudit({
+      action: "checkin.delete",
+      entityType: "checkin",
+      entityId: params.id,
+      metadata: { userId: row.user_id, checkinDate: row.checkin_date, deletedBy: me.id },
+      req,
+    });
+
+    return NextResponse.json({ message: "Deleted" });
+  } catch (e: unknown) {
+    console.error("[checkin/[id]/DELETE] error:", e);
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 }

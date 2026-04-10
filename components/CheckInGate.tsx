@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import CheckInModal from "./CheckInModal";
 
@@ -10,68 +10,85 @@ interface CheckInGateProps {
 const DEFER_KEY = (userId: string, date: string) => `ci_deferred_${userId}_${date}`;
 const DONE_KEY  = (userId: string, date: string) => `ci_done_${userId}_${date}`;
 
+/**
+ * Check whether the user has completed their check-in today.
+ * Used by both CheckInGate and Layout (for the logout prompt).
+ */
+export function hasCheckedInToday(userId: string | undefined): boolean {
+  if (!userId || typeof window === "undefined") return true;
+  const today = new Date().toISOString().slice(0, 10);
+  return localStorage.getItem(DONE_KEY(userId, today)) === "1";
+}
+
 export default function CheckInGate({ children }: CheckInGateProps) {
   const { data: session, status } = useSession();
   const [showModal,   setShowModal]   = useState(false);
   const [canDefer,    setCanDefer]    = useState(true);
   const [ready,       setReady]       = useState(false);
+  const [checkedIn,   setCheckedIn]   = useState(false);
 
   const userId = (session?.user as { id?: string })?.id;
   const role   = (session?.user as { role?: string })?.role;
   const requiresCheckin = (session?.user as { requiresCheckin?: boolean })?.requiresCheckin;
   const today  = new Date().toISOString().slice(0, 10);
 
-  // Roles that NEVER get the check-in prompt regardless of the per-user
-  // requires_checkin flag. Admins / super admins are excluded by design —
-  // they're not the ones doing daily reports.
   const exemptRole = role === "super_admin" || role === "admin";
-  // For everyone else, the prompt only fires if requires_checkin is true
-  // on their user row. (Manager defaults to true; member/lead default to
-  // false unless an admin flips it.)
   const shouldGate = !exemptRole && requiresCheckin === true;
 
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
     if (!shouldGate) {
       setReady(true);
+      setCheckedIn(true);
       return;
     }
 
     const doneKey   = DONE_KEY(userId, today);
     const deferKey  = DEFER_KEY(userId, today);
 
-    // Already checked in today
     if (typeof window !== "undefined" && localStorage.getItem(doneKey)) {
       setReady(true);
+      setCheckedIn(true);
       return;
     }
 
-    // Check with server if they've already checked in
     fetch(`/api/checkin?userId=${userId}&date=${today}`)
       .then(r => r.json())
       .then(d => {
         if (d.data && d.data.length > 0) {
-          // Already checked in — save locally and skip modal
           if (typeof window !== "undefined") localStorage.setItem(doneKey, "1");
           setReady(true);
+          setCheckedIn(true);
           return;
         }
-        // Not checked in — check if they've deferred once already today
         const alreadyDeferred = typeof window !== "undefined" && localStorage.getItem(deferKey);
-        setCanDefer(!alreadyDeferred); // second time = mandatory
+        setCanDefer(!alreadyDeferred);
         setShowModal(true);
         setReady(true);
+        // NOT checked in — leave checkedIn false
       })
       .catch(() => {
-        // Can't reach server — allow access but show modal
         setReady(true);
         setShowModal(true);
       });
   }, [status, userId, today, shouldGate]);
 
+  // ── beforeunload: warn if leaving without check-in ──
+  const handleBeforeUnload = useCallback((e: BeforeUnloadEvent) => {
+    if (!checkedIn && shouldGate) {
+      e.preventDefault();
+      // Modern browsers show a generic "leave site?" dialog
+    }
+  }, [checkedIn, shouldGate]);
+
+  useEffect(() => {
+    if (!shouldGate || checkedIn) return;
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [shouldGate, checkedIn, handleBeforeUnload]);
+
   const handleDefer = () => {
     if (!userId) return;
-    // Record that they've used their one deferral
     if (typeof window !== "undefined") localStorage.setItem(DEFER_KEY(userId, today), "1");
     setShowModal(false);
   };
@@ -79,10 +96,10 @@ export default function CheckInGate({ children }: CheckInGateProps) {
   const handleComplete = () => {
     if (!userId) return;
     if (typeof window !== "undefined") localStorage.setItem(DONE_KEY(userId, today), "1");
+    setCheckedIn(true);
     setShowModal(false);
   };
 
-  // Not authenticated — just render children (middleware handles redirect)
   if (status === "loading" || !ready) {
     return (
       <div style={{ display:"flex", height:"100vh", alignItems:"center", justifyContent:"center", background:"var(--bg-base)" }}>
@@ -99,7 +116,7 @@ export default function CheckInGate({ children }: CheckInGateProps) {
       {children}
       <CheckInModal
         open={showModal}
-        onClose={canDefer ? handleDefer : () => {}} // if mandatory, close does nothing
+        onClose={canDefer ? handleDefer : () => {}}
         onComplete={handleComplete}
         canDefer={canDefer}
       />
