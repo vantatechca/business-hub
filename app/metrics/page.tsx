@@ -270,7 +270,7 @@ export default function MetricsPage() {
   // ── RENDER ────────────────────────────────────────────────
   return (
     <AppLayout
-      title="Metrics"
+      title="Assets"
       onNew={canEditDetails ? () => { setForm({ ...blank, departmentId: depts[0]?.id ?? "__general__" }); setShowAdd(true); } : undefined}
       newLabel="Add Metric"
     >
