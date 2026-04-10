@@ -29,7 +29,7 @@ const NAV = [
     {id:"team",l:"Team",h:"/team",I:Users},
     {id:"tasks",l:"Tasks",h:"/tasks",I:ListChecks},
     {id:"checkin",l:"Check-Ins",h:"/checkin",I:CalendarCheck},
-    {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake},
+    {id:"birthdays",l:"Birthdays",h:"/birthdays",I:Cake, mgrOnly:true},
   ]},
   { s:"FINANCE", items:[
     {id:"revenue",l:"Revenue",h:"/revenue",I:DollarSign, mgrOnly:true},

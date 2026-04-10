@@ -107,7 +107,26 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const today = new Date().toISOString().slice(0, 10);
+
+  // Use the user's timezone to determine "today". The client can send a
+  // timezone string; otherwise we look up the user's stored timezone;
+  // last resort is America/Toronto.
+  let userTz = body.timezone as string | undefined;
+  if (!userTz && body.userId) {
+    try {
+      const tzRows = await sql`SELECT timezone FROM users WHERE id = ${body.userId}`;
+      if (tzRows.length) userTz = (tzRows[0] as { timezone: string }).timezone;
+    } catch {}
+  }
+  let today: string;
+  try {
+    today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: userTz || "America/Toronto",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+  } catch {
+    today = new Date().toISOString().slice(0, 10);
+  }
 
   const record = {
     userId:              body.userId,

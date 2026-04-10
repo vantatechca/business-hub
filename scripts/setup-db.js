@@ -352,6 +352,9 @@ async function runAdditiveMigrations() {
     // converts at render time when the user switches global currency.
     `ALTER TABLE revenue_entries ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'`,
     `ALTER TABLE expense_entries ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'`,
+    // Full date field for precise entry dating (vs just month/year).
+    `ALTER TABLE expense_entries ADD COLUMN IF NOT EXISTS entry_date DATE`,
+    `ALTER TABLE revenue_entries ADD COLUMN IF NOT EXISTS entry_date DATE`,
   ];
 
   let ok = 0;

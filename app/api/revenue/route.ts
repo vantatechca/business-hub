@@ -10,7 +10,7 @@ const ALLOWED_CURRENCIES = new Set(["USD", "CAD"]);
 export async function GET() {
   try {
     const rows = await sql`
-      SELECT r.id, r.amount, r.currency, r.department_id, r.description, r.month, r.year, r.created_at,
+      SELECT r.id, r.amount, r.currency, r.department_id, r.description, r.month, r.year, r.entry_date, r.created_at,
              d.name AS department_name
       FROM revenue_entries r
       LEFT JOIN departments d ON d.id::text = r.department_id::text
@@ -29,20 +29,21 @@ export async function POST(req: NextRequest) {
   const currency = ALLOWED_CURRENCIES.has(b.currency) ? b.currency : "USD";
   try {
     const inserted = await sql`
-      INSERT INTO revenue_entries (amount, currency, department_id, description, month, year)
+      INSERT INTO revenue_entries (amount, currency, department_id, description, month, year, entry_date)
       VALUES (
         ${Number(b.amount) || 0},
         ${currency},
         ${b.departmentId || null},
         ${b.description ?? ""},
         ${b.month ?? null},
-        ${Number(b.year) || new Date().getFullYear()}
+        ${Number(b.year) || new Date().getFullYear()},
+        ${b.entryDate || null}
       )
       RETURNING id
     `;
     const id = (inserted[0] as Record<string, unknown>).id as string;
     const rows = await sql`
-      SELECT r.id, r.amount, r.currency, r.department_id, r.description, r.month, r.year, r.created_at,
+      SELECT r.id, r.amount, r.currency, r.department_id, r.description, r.month, r.year, r.entry_date, r.created_at,
              d.name AS department_name
       FROM revenue_entries r
       LEFT JOIN departments d ON d.id::text = r.department_id::text
