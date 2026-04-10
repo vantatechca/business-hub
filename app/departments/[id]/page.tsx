@@ -93,8 +93,8 @@ export default function DepartmentDetailPage() {
   const deptId = params?.id;
   const { data: session } = useSession();
   const role = (session?.user as { role?: string })?.role ?? "member";
-  // Only manager+ can edit department details, add tasks, add metrics, manage team.
-  // Lead and member get a read-only view.
+  const myUserId = (session?.user as { id?: string })?.id;
+  // Manager+ can edit department details, add tasks, add metrics, manage team.
   const canEdit = role === "admin" || role === "super_admin" || role === "manager" || role === "leader";
 
   const [dept, setDept] = useState<Department | null>(null);
@@ -187,6 +187,11 @@ export default function DepartmentDetailPage() {
           return a.name.localeCompare(b.name);
         })
     : [];
+
+  // Is the current viewer a lead of THIS department? Leads can manage
+  // team members (add, remove) within their own department.
+  const isDeptLead = !!(myUserId && myTeam.some(m => String(m.id) === String(myUserId) && m.roleInDept === "lead"));
+  const canManageTeam = canEdit || isDeptLead;
 
   // ── Task CRUD ──────────────────────────────────────
   const openAddTask = (status: string = "todo") => {
@@ -465,7 +470,7 @@ export default function DepartmentDetailPage() {
           onChange={e => setMemberForm(p => ({ ...p, roleInDept: e.target.value as "lead" | "member" }))}
         >
           <option value="member">Member</option>
-          <option value="lead">Team Lead</option>
+          {canEdit && <option value="lead">Team Lead</option>}
         </HubSelect>
       </FormField>
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -777,7 +782,7 @@ export default function DepartmentDetailPage() {
       )}
 
       {tab === "team" && (
-        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} onRemoveMember={removeMember} onChangeRole={changeMemberRoleInDept} canEdit={canEdit} />
+        <DeptTeamTab team={myTeam} departmentId={String(dept.id)} departmentName={dept.name} onAddMember={openAddMember} onRemoveMember={removeMember} onChangeRole={changeMemberRoleInDept} canEdit={canManageTeam} canPromote={canEdit} />
       )}
 
       {tab === "expenses" && (
@@ -971,6 +976,7 @@ function DeptTeamTab({
   onRemoveMember,
   onChangeRole,
   canEdit = true,
+  canPromote = true,
 }: {
   team: DeptMember[];
   departmentId: string;
@@ -979,6 +985,7 @@ function DeptTeamTab({
   onRemoveMember: (m: TeamMember) => void;
   onChangeRole: (m: TeamMember, next: "lead" | "member") => void;
   canEdit?: boolean;
+  canPromote?: boolean;
 }) {
   void departmentId;
   const [confirming, setConfirming] = useState<TeamMember | null>(null);
@@ -1029,13 +1036,15 @@ function DeptTeamTab({
                     {canEdit && (
                       <td style={{ textAlign: "right" }}>
                         <div style={{ display: "inline-flex", gap: 5 }}>
-                          <button
-                            onClick={() => onChangeRole(m, isLead ? "member" : "lead")}
-                            title={isLead ? "Demote to Member" : "Promote to Team Lead"}
-                            style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
-                          >
-                            {isLead ? "Make Member" : "Make Team Lead"}
-                          </button>
+                          {canPromote && (
+                            <button
+                              onClick={() => onChangeRole(m, isLead ? "member" : "lead")}
+                              title={isLead ? "Demote to Member" : "Promote to Team Lead"}
+                              style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                            >
+                              {isLead ? "Make Member" : "Make Team Lead"}
+                            </button>
+                          )}
                           <button
                             onClick={() => setConfirming(m)}
                             title="Remove from department"

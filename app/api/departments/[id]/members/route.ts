@@ -1,24 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
-import { getSessionUser, isAdmin } from "@/lib/authz";
+import { getSessionUser, isManagerOrHigher } from "@/lib/authz";
 import { logAudit } from "@/lib/audit";
+
+/**
+ * Permission check for department member mutations:
+ *   - admin / super_admin: can manage any department
+ *   - manager: can manage any department
+ *   - lead: can manage ONLY departments where they are a lead (role_in_dept = 'lead')
+ *   - member: cannot manage
+ *
+ * Returns true if allowed, false otherwise.
+ */
+async function canManageDeptMembers(
+  me: { id: string; role: string } | null,
+  departmentId: string,
+): Promise<boolean> {
+  if (!me) return false;
+  if (isManagerOrHigher(me.role)) return true;
+  if (me.role !== "lead") return false;
+  try {
+    const rows = await sql`
+      SELECT 1 FROM user_departments
+      WHERE user_id = ${me.id}
+        AND department_id::text = ${departmentId}
+        AND role_in_dept = 'lead'
+      LIMIT 1
+    `;
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 // POST /api/departments/[id]/members
 //   Body: { userId, roleInDept: 'lead' | 'member' }
-// Adds a row to user_departments OR updates the existing row's role_in_dept
-// if the user is already a member of this department. This is the "Add to
-// department" / "Promote to Team Lead" call from the department detail page.
+// Adds a row to user_departments OR updates the existing row's role_in_dept.
 //
-// Permission: admin / super_admin only.
-//
-// Per-department role is intentionally INDEPENDENT of the user's global role.
-// A 'member' globally can be a 'lead' inside one department, and vice versa.
+// Permission: admin/super_admin/manager, OR a lead of THIS department.
+// Leads cannot promote someone else to 'lead' — they can only add members.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const me = await getSessionUser();
-  if (!isAdmin(me?.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canManageDeptMembers(me, params.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const b = await req.json();
   const userId = String(b.userId ?? "").trim();
-  const roleInDept = b.roleInDept === "lead" ? "lead" : "member";
+  let roleInDept = b.roleInDept === "lead" ? "lead" : "member";
+  // Leads can add members but cannot promote someone to 'lead'
+  if (me && me.role === "lead" && roleInDept === "lead") {
+    roleInDept = "member";
+  }
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
   try {
     await sql`
@@ -57,9 +89,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
 // DELETE /api/departments/[id]/members?userId=...
 // Removes a single membership row. Doesn't touch the user record itself.
+// Permission: same as POST — admin/manager or department lead.
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const me = await getSessionUser();
-  if (!isAdmin(me?.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canManageDeptMembers(me, params.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { searchParams } = new URL(req.url);
   const userId = searchParams.get("userId");
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
