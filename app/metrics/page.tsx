@@ -114,21 +114,27 @@ export default function MetricsPage() {
   // ── FILTERING ─────────────────────────────────────────────
   const filtered = metrics.filter(m =>
     m.name.toLowerCase().includes(q.toLowerCase()) &&
-    (!deptFilter || m.departmentId === deptFilter) &&
+    (!deptFilter || (deptFilter === "__general__" ? !m.departmentId : m.departmentId === deptFilter)) &&
     (!typeFilter || m.metricType === typeFilter),
   );
 
-  // Group by department, preserving sort order
+  // Group by department, preserving sort order. Metrics with no department
+  // go into a special "__general__" bucket rendered as "General".
+  const GENERAL_KEY = "__general__";
   const byDeptId = filtered.reduce<Record<string, Metric[]>>((acc, m) => {
-    if (!acc[m.departmentId]) acc[m.departmentId] = [];
-    acc[m.departmentId].push(m);
+    const k = m.departmentId || GENERAL_KEY;
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(m);
     return acc;
   }, {});
-  const orderedDeptIds = depts.map(d => d.id).filter(id => byDeptId[id]?.length > 0);
+  const orderedDeptIds = [
+    ...depts.map(d => d.id).filter(id => byDeptId[id]?.length > 0),
+    ...(byDeptId[GENERAL_KEY]?.length ? [GENERAL_KEY] : []),
+  ];
 
   // ── METRIC CRUD ───────────────────────────────────────────
   const save = async () => {
-    if (!form.name || !form.departmentId) return toast("Name and department required", "er");
+    if (!form.name) return toast("Name is required", "er");
     const res = await fetch("/api/metrics", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
@@ -165,7 +171,7 @@ export default function MetricsPage() {
   const openEdit = (m: Metric) => {
     setEditing(m);
     setForm({
-      departmentId: m.departmentId, name: m.name, metricType: m.metricType,
+      departmentId: m.departmentId || "__general__", name: m.name, metricType: m.metricType,
       direction: m.direction, currentValue: m.currentValue,
       targetValue: m.targetValue, unit: m.unit, priorityScore: m.priorityScore,
       notes: m.notes ?? "",
@@ -208,7 +214,7 @@ export default function MetricsPage() {
     <div>
       <FormField label="Department">
         <HubSelect value={form.departmentId} onChange={e => setForm(p => ({ ...p, departmentId: e.target.value }))}>
-          <option value="">Select department…</option>
+          <option value="__general__">General (no department)</option>
           {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </HubSelect>
       </FormField>
@@ -265,7 +271,7 @@ export default function MetricsPage() {
   return (
     <AppLayout
       title="Metrics"
-      onNew={canEditDetails ? () => { setForm({ ...blank, departmentId: depts[0]?.id ?? "" }); setShowAdd(true); } : undefined}
+      onNew={canEditDetails ? () => { setForm({ ...blank, departmentId: depts[0]?.id ?? "__general__" }); setShowAdd(true); } : undefined}
       newLabel="Add Metric"
     >
       <ToastList ts={ts} />
@@ -301,6 +307,7 @@ export default function MetricsPage() {
         <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: 8, padding: "7px 11px", color: "var(--text-primary)", fontSize: 12, outline: "none" }}>
           <option value="">All Departments</option>
           {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          <option value="__general__">General (unassigned)</option>
         </select>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: 8, padding: "7px 11px", color: "var(--text-primary)", fontSize: 12, outline: "none" }}>
           <option value="">All Types</option>
@@ -317,7 +324,10 @@ export default function MetricsPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {orderedDeptIds.map(deptId => {
-            const dept = depts.find(d => d.id === deptId)!;
+            const isGeneral = deptId === GENERAL_KEY;
+            const dept: Department = isGeneral
+              ? { id: GENERAL_KEY, name: "General", slug: "general", color: "#6b7280", icon: "📋", priorityScore: 0, sortOrder: 9999 }
+              : depts.find(d => d.id === deptId)!;
             const deptMetrics = byDeptId[deptId];
             const isCollapsed = !!collapsed[deptId];
             const totalMetrics = deptMetrics.filter(m => m.metricType === "value" || m.metricType === "value_and_daily");
@@ -357,8 +367,8 @@ export default function MetricsPage() {
 
                 {!isCollapsed && (
                   <>
-                    {/* ── Notes / link row ──────────────────── */}
-                    {(hasNotes || canEditDetails) && (
+                    {/* ── Notes / link row (skip for General) ── */}
+                    {!isGeneral && (hasNotes || canEditDetails) && (
                       <div style={{
                         display: "flex", alignItems: "flex-start", gap: 10,
                         padding: "10px 18px",
