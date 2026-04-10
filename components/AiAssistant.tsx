@@ -18,19 +18,20 @@ interface ParsedAction {
 /** Parse [ACTION:NOTIFY|target|title|body] from AI text. Returns the text without action lines + the actions. */
 function parseActions(text: string): { cleanText: string; actions: ParsedAction[] } {
   const actions: ParsedAction[] = [];
-  const lines = text.split("\n");
-  const cleanLines: string[] = [];
 
-  for (const line of lines) {
-    const match = line.match(/^\[ACTION:NOTIFY\|([^|]+)\|([^|]+)\|([^\]]+)\]$/);
-    if (match) {
-      actions.push({ type: "NOTIFY", target: match[1], title: match[2], body: match[3] });
-    } else {
-      cleanLines.push(line);
-    }
+  // Extract all [ACTION:NOTIFY|...|...|...] blocks anywhere in the text.
+  // The body (3rd pipe segment) can contain any character including ] so we
+  // use a greedy match up to the last ] on a line-like boundary.
+  const actionRegex = /\[ACTION:NOTIFY\|([^|]+)\|([^|]+)\|(.+?)\]/g;
+  let cleanText = text;
+  let m;
+
+  while ((m = actionRegex.exec(text)) !== null) {
+    actions.push({ type: "NOTIFY", target: m[1].trim(), title: m[2].trim(), body: m[3].trim() });
+    cleanText = cleanText.replace(m[0], "");
   }
 
-  return { cleanText: cleanLines.join("\n").trim(), actions };
+  return { cleanText: cleanText.trim(), actions };
 }
 
 /** Human-readable label for the notification target. */
