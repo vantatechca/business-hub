@@ -4,6 +4,8 @@ import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Avatar, Badge, Modal, FormField, HubInput, HubSelect, HubTextarea, useToast, ToastList } from "@/components/ui/shared";
 import DueAlertBanner from "@/components/DueAlertBanner";
+import AiSearchBar from "@/components/AiSearchBar";
+import { useAiSearch } from "@/lib/useAiSearch";
 import type { Task, Department, TeamMember } from "@/lib/types";
 import { formatTaskDueDate, isTaskDueTodayOrPast } from "@/lib/types";
 import {
@@ -53,11 +55,7 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ]           = useState("");
   const [deptFilter, setDeptFilter] = useState("");
-  // AI search: when enabled, natural-language queries go through Claude
-  const [aiMode, setAiMode] = useState(false);
-  const [aiSearching, setAiSearching] = useState(false);
-  const [aiMatchedIds, setAiMatchedIds] = useState<Set<string> | null>(null);
-  const [aiExplanation, setAiExplanation] = useState("");
+  const ai = useAiSearch("tasks");
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [form, setForm]     = useState<typeof blank>({ ...blank });
@@ -85,9 +83,9 @@ export default function TasksPage() {
   // can be a UUID, slug, or number depending on when/where it was created).
   const ft = tasks.filter(t => {
     // AI mode: show only tasks whose ID is in the AI match set
-    if (aiMode && aiMatchedIds) {
-      if (!aiMatchedIds.has(String(t.id))) return false;
-    } else if (!aiMode) {
+    if (ai.aiMode && ai.matchedIds) {
+      if (!ai.matchedIds.has(String(t.id))) return false;
+    } else if (!ai.aiMode) {
       if (!t.title.toLowerCase().includes(q.toLowerCase())) return false;
     }
     if (!deptFilter) return true;
@@ -95,37 +93,12 @@ export default function TasksPage() {
       || String(t.departmentId ?? "") === deptFilter;
   });
 
-  // Fire AI search when the user hits Enter or the query changes in AI mode
-  const runAiSearch = async () => {
-    if (!q.trim()) { setAiMatchedIds(null); setAiExplanation(""); return; }
-    setAiSearching(true);
-    try {
-      const items = tasks.map(t => ({
-        id: String(t.id),
-        text: [
-          t.title,
-          t.priority,
-          t.status,
-          t.departmentName,
-          t.assigneeName,
-          (t as unknown as { notes?: string }).notes,
-        ].filter(Boolean).join(" | "),
-      }));
-      const res = await fetch("/api/ai-search", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, items, targetName: "tasks" }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setAiMatchedIds(new Set(data.data?.matchingIds ?? []));
-        setAiExplanation(data.data?.explanation ?? "");
-      } else {
-        toast(data.error || "AI search failed", "er");
-      }
-    } catch {
-      toast("AI search failed", "er");
-    }
-    setAiSearching(false);
+  const runTaskAiSearch = () => {
+    const items = tasks.map(t => ({
+      id: String(t.id),
+      text: [t.title, t.priority, t.status, t.departmentName, t.assigneeName, (t as unknown as { notes?: string }).notes].filter(Boolean).join(" | "),
+    }));
+    ai.runAiSearch(items);
   };
 
   const openAdd = (status = "todo") => {
@@ -407,70 +380,33 @@ export default function TasksPage() {
         label="tasks"
       />
 
-      <div style={{ display:"flex", gap:10, marginBottom:14, alignItems:"center", flexWrap:"wrap" }}>
-        <div style={{
-          flex: 1, minWidth: 200, display: "flex", alignItems: "center", gap: 8,
-          background: aiMode ? "linear-gradient(135deg, rgba(91,142,248,.08), rgba(124,58,237,.08))" : "var(--bg-card)",
-          border: `1px solid ${aiMode ? "var(--accent)" : "var(--border-card)"}`,
-          borderRadius: 8, padding: "7px 11px",
-        }}>
-          <span style={{ color: aiMode ? "var(--accent)" : "var(--text-muted)", fontSize: aiMode ? 14 : 13 }}>{aiMode ? "✨" : "⌕"}</span>
-          <input
-            value={q}
-            onChange={e => { setQ(e.target.value); if (aiMode) { setAiMatchedIds(null); setAiExplanation(""); } }}
-            onKeyDown={e => { if (aiMode && e.key === "Enter") runAiSearch(); }}
-            placeholder={aiMode ? "Ask anything... e.g. 'find all tasks related to shopify'" : "Search tasks…"}
-            style={{ border: "none", background: "transparent", outline: "none", fontSize: 12, color: "var(--text-primary)", width: "100%" }}
-          />
-          {aiMode && q && (
-            <button
-              onClick={runAiSearch}
-              disabled={aiSearching}
-              style={{ padding: "4px 10px", borderRadius: 6, background: "var(--accent)", color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
-            >
-              {aiSearching ? "…" : "Search"}
-            </button>
-          )}
-        </div>
-        <button
-          onClick={() => { setAiMode(!aiMode); setAiMatchedIds(null); setAiExplanation(""); }}
-          title="Toggle AI search"
-          style={{
-            padding: "7px 12px", borderRadius: 8,
-            border: `1px solid ${aiMode ? "var(--accent)" : "var(--border-card)"}`,
-            background: aiMode ? "var(--accent-bg)" : "var(--bg-card)",
-            color: aiMode ? "var(--accent)" : "var(--text-secondary)",
-            fontSize: 11, fontWeight: 700, cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 6,
-          }}
-        >
-          <span style={{ fontSize: 13 }}>✨</span> AI {aiMode ? "ON" : "OFF"}
-        </button>
-        <select
-          value={deptFilter}
-          onChange={e => setDeptFilter(e.target.value)}
-          style={{ background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px", color:"var(--text-primary)", fontSize:12, outline:"none" }}
-        >
-          <option value="">All Departments</option>
-          {depts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-        </select>
-        <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{ft.length} of {tasks.length} · {tasks.filter(t=>t.status==="done").length} done</span>
-      </div>
-
-      {aiMode && aiExplanation && (
-        <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--accent-bg)", border: "1px solid var(--accent)44", marginBottom: 14, fontSize: 12, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 16 }}>✨</span>
-          <div style={{ flex: 1 }}>
-            <strong style={{ color: "var(--accent)" }}>AI:</strong> {aiExplanation}
-          </div>
-          <button
-            onClick={() => { setAiMatchedIds(null); setAiExplanation(""); setQ(""); }}
-            style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border-card)", background: "var(--bg-card)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+      <div style={{ marginBottom: 14 }}>
+        <AiSearchBar
+          aiMode={ai.aiMode}
+          setAiMode={ai.setAiMode}
+          q={ai.aiMode ? ai.q : q}
+          setQ={(v) => ai.aiMode ? ai.setQ(v) : setQ(v)}
+          loading={ai.loading}
+          onRun={runTaskAiSearch}
+          clear={ai.clear}
+          placeholder="Ask anything... e.g. 'find all tasks related to shopify'"
+          plainPlaceholder="Search tasks…"
+          matchCount={ft.length}
+          hasMatches={!!ai.matchedIds}
+          explanation={ai.explanation}
+        />
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+          <select
+            value={deptFilter}
+            onChange={e => setDeptFilter(e.target.value)}
+            style={{ background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px", color:"var(--text-primary)", fontSize:12, outline:"none" }}
           >
-            Clear
-          </button>
+            <option value="">All Departments</option>
+            {depts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+          </select>
+          <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{ft.length} of {tasks.length} · {tasks.filter(t=>t.status==="done").length} done</span>
         </div>
-      )}
+      </div>
 
       {loading ? (
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>

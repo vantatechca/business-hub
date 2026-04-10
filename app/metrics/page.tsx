@@ -6,6 +6,8 @@ import {
   Card, Modal, FormField, HubInput, HubSelect, HubTextarea,
   ConfirmModal, useToast, ToastList, EmptyState, formatMetricValue,
 } from "@/components/ui/shared";
+import AiSearchBar from "@/components/AiSearchBar";
+import { useAiSearch } from "@/lib/useAiSearch";
 import MetricHistoryDrawer from "@/components/MetricHistoryDrawer";
 import DueAlertBanner from "@/components/DueAlertBanner";
 import type { Metric, Department } from "@/lib/types";
@@ -113,12 +115,27 @@ export default function MetricsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const ai = useAiSearch("assets");
+
+  const runAssetsAi = () => {
+    const items = metrics.map(m => ({
+      id: String(m.id),
+      text: [m.name, m.departmentName, m.unit, m.metricType, m.notes].filter(Boolean).join(" | "),
+    }));
+    ai.runAiSearch(items);
+  };
+
   // ── FILTERING ─────────────────────────────────────────────
-  const filtered = metrics.filter(m =>
-    m.name.toLowerCase().includes(q.toLowerCase()) &&
-    (!deptFilter || (deptFilter === "__general__" ? !m.departmentId : m.departmentId === deptFilter)) &&
-    (!typeFilter || m.metricType === typeFilter),
-  );
+  const filtered = metrics.filter(m => {
+    if (ai.aiMode && ai.matchedIds) {
+      if (!ai.matchedIds.has(String(m.id))) return false;
+    } else if (!ai.aiMode) {
+      if (!m.name.toLowerCase().includes(q.toLowerCase())) return false;
+    }
+    if (deptFilter && (deptFilter === "__general__" ? !!m.departmentId : m.departmentId !== deptFilter)) return false;
+    if (typeFilter && m.metricType !== typeFilter) return false;
+    return true;
+  });
 
   // Group by department, preserving sort order. Metrics with no department
   // go into a special "__general__" bucket rendered as "General".
@@ -359,11 +376,23 @@ export default function MetricsPage() {
       </div>
 
       {/* Filters */}
+      <div style={{ marginBottom: 14 }}>
+        <AiSearchBar
+          aiMode={ai.aiMode}
+          setAiMode={ai.setAiMode}
+          q={ai.aiMode ? ai.q : q}
+          setQ={(v) => ai.aiMode ? ai.setQ(v) : setQ(v)}
+          loading={ai.loading}
+          onRun={runAssetsAi}
+          clear={ai.clear}
+          placeholder="Ask anything... e.g. 'assets related to shopify'"
+          plainPlaceholder="Search assets…"
+          matchCount={filtered.length}
+          hasMatches={!!ai.matchedIds}
+          explanation={ai.explanation}
+        />
+      </div>
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 180, display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: 8, padding: "7px 11px" }}>
-          <span style={{ color: "var(--text-muted)" }}>⌕</span>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search metrics…" style={{ border: "none", background: "transparent", outline: "none", fontSize: 12, color: "var(--text-primary)", width: "100%" }} />
-        </div>
         <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ background: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: 8, padding: "7px 11px", color: "var(--text-primary)", fontSize: 12, outline: "none" }}>
           <option value="">All Departments</option>
           {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}

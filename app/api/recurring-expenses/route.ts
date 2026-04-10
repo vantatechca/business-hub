@@ -37,8 +37,10 @@ export async function GET() {
       data: rowsToCamel<Record<string, unknown>>(rows as Record<string, unknown>[]).map(shape),
     });
   } catch (e: unknown) {
-    console.error("[recurring-expenses/GET] error:", e);
-    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+    // Table may not exist yet (migration hasn't run) — return empty list
+    // instead of 503 so the page still loads gracefully.
+    console.warn("[recurring-expenses/GET] table missing or query failed:", (e as Error).message);
+    return NextResponse.json({ data: [] });
   }
 }
 

@@ -12,6 +12,7 @@ import { CURRENCIES } from "@/lib/currency";
 import SendAlertModal from "./SendAlertModal";
 import ReportIssueModal from "./ReportIssueModal";
 import AiAssistant from "./AiAssistant";
+import GlobalAiSearch from "./GlobalAiSearch";
 import CheckInModal from "./CheckInModal";
 import { hasCheckedInToday } from "./CheckInGate";
 
@@ -262,6 +263,7 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
           <header style={{height:"var(--topbar-height)",background:"var(--bg-sidebar)",borderBottom:"1px solid var(--border-sidebar)",display:"flex",alignItems:"center",padding:"0 18px",gap:10,flexShrink:0}}>
             <h1 style={{flex:1,fontSize:15,fontWeight:800,color:"var(--text-primary)",margin:0,letterSpacing:"-0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</h1>
+            <GlobalAiSearch />
             <div style={{position:"relative"}}>
               <button
                 onClick={() => setShowCur(v => !v)}
