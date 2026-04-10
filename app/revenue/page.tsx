@@ -32,6 +32,23 @@ export default function RevenuePage() {
   const [editing, setEditing] = useState<RevenueEntry | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
   const [hov, setHov]         = useState<string | null>(null);
+  // Filter & sort state
+  const [fMonth, setFMonth] = useState<string>("");
+  const [fYear, setFYear]   = useState<string>("");
+  const [fDept, setFDept]   = useState<string>("");
+  const [fMinAmt, setFMinAmt] = useState<string>("");
+  const [fMaxAmt, setFMaxAmt] = useState<string>("");
+  const [fQ, setFQ]         = useState<string>("");
+  const [sortBy, setSortBy] = useState<"date" | "month" | "department" | "amount_desc" | "amount_asc">("date");
+  const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
+    try { return JSON.parse(localStorage.getItem("revenue_collapsed") ?? "{}"); } catch { return {}; }
+  });
+  const toggleMonth = (key: string) => setCollapsedMonths(p => {
+    const next = { ...p, [key]: !p[key] };
+    try { localStorage.setItem("revenue_collapsed", JSON.stringify(next)); } catch {}
+    return next;
+  });
   const { ts, toast }         = useToast();
 
   const load = () => Promise.all([
@@ -45,6 +62,47 @@ export default function RevenuePage() {
 
   const total = entries.reduce((a, e) => a + amountIn(e), 0);
   const thisM = entries.filter(e => e.month === MONTHS[new Date().getMonth()]).reduce((a, e) => a + amountIn(e), 0);
+
+  const years = Array.from(new Set(entries.map(e => String(e.year)))).sort((a, b) => Number(b) - Number(a));
+
+  const filteredEntries = entries.filter(e => {
+    if (fMonth && e.month !== fMonth) return false;
+    if (fYear && String(e.year) !== fYear) return false;
+    if (fDept) {
+      if (fDept === "__none__") {
+        if (e.departmentId) return false;
+      } else if (String(e.departmentId ?? "") !== fDept) return false;
+    }
+    const amt = amountIn(e);
+    if (fMinAmt && amt < Number(fMinAmt)) return false;
+    if (fMaxAmt && amt > Number(fMaxAmt)) return false;
+    if (fQ) {
+      const q = fQ.toLowerCase();
+      if (!e.description.toLowerCase().includes(q) && !(e.departmentName ?? "").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  const sortedEntries = [...filteredEntries].sort((a, b) => {
+    switch (sortBy) {
+      case "amount_desc": return amountIn(b) - amountIn(a);
+      case "amount_asc":  return amountIn(a) - amountIn(b);
+      case "department":  return (a.departmentName ?? "").localeCompare(b.departmentName ?? "");
+      case "month": {
+        const ay = Number(a.year) || 0, by = Number(b.year) || 0;
+        if (ay !== by) return by - ay;
+        return MONTHS.indexOf(b.month ?? "") - MONTHS.indexOf(a.month ?? "");
+      }
+      case "date":
+      default: {
+        const ad = (a as unknown as { entryDate?: string }).entryDate ?? `${a.year}-${String(MONTHS.indexOf(a.month ?? "") + 1).padStart(2, "0")}-01`;
+        const bd = (b as unknown as { entryDate?: string }).entryDate ?? `${b.year}-${String(MONTHS.indexOf(b.month ?? "") + 1).padStart(2, "0")}-01`;
+        return bd.localeCompare(ad);
+      }
+    }
+  });
+
+  const filteredTotal = sortedEntries.reduce((a, e) => a + amountIn(e), 0);
 
   const selectDept = (id: string | number) => {
     const d = depts.find(x => String(x.id) === String(id));
@@ -242,48 +300,137 @@ export default function RevenuePage() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Filters + sort */}
+      {entries.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12, padding: "10px 12px", background: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: 10 }}>
+          <input
+            value={fQ}
+            onChange={e => setFQ(e.target.value)}
+            placeholder="Search description…"
+            style={{ flex: 1, minWidth: 140, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}
+          />
+          <select value={fMonth} onChange={e => setFMonth(e.target.value)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}>
+            <option value="">All Months</option>
+            {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select value={fYear} onChange={e => setFYear(e.target.value)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}>
+            <option value="">All Years</option>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}>
+            <option value="">All Departments</option>
+            <option value="__none__">General (no dept)</option>
+            {depts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+          </select>
+          <input type="number" value={fMinAmt} onChange={e => setFMinAmt(e.target.value)} placeholder="Min $" style={{ width: 80, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, outline: "none" }} />
+          <input type="number" value={fMaxAmt} onChange={e => setFMaxAmt(e.target.value)} placeholder="Max $" style={{ width: 80, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, outline: "none" }} />
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, outline: "none" }}>
+            <option value="date">Sort: Newest</option>
+            <option value="month">Sort: Month</option>
+            <option value="department">Sort: Department</option>
+            <option value="amount_desc">Sort: Amount (high → low)</option>
+            <option value="amount_asc">Sort: Amount (low → high)</option>
+          </select>
+          {(fMonth || fYear || fDept || fMinAmt || fMaxAmt || fQ) && (
+            <button
+              onClick={() => { setFMonth(""); setFYear(""); setFDept(""); setFMinAmt(""); setFMaxAmt(""); setFQ(""); }}
+              style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border-card)", background: "transparent", color: "var(--text-muted)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+            >
+              Clear
+            </button>
+          )}
+          <span style={{ fontSize: 11, color: "var(--text-secondary)", marginLeft: "auto" }}>
+            {sortedEntries.length} of {entries.length} · {formatMoney(filteredTotal, displayCurrency)}
+          </span>
+        </div>
+      )}
+
       {loading ? (
         <div className="skeleton" style={{ height:200, borderRadius:12 }} />
       ) : entries.length === 0 ? (
         <EmptyState icon="$" title="No revenue entries yet" desc="Start tracking your revenue by adding an entry." action={<button onClick={openAdd} style={{ padding:"8px 18px", borderRadius:8, background:"var(--accent)", color:"#fff", border:"none", fontWeight:700, fontSize:13, cursor:"pointer" }}>Add Entry</button>} />
-      ) : (
-        <div className="hub-card" style={{ padding:0, overflow:"hidden" }}>
-          <table className="hub-table">
-            <thead><tr>{["Month","Department","Description","Amount",""].map(h => <th key={h}>{h}</th>)}</tr></thead>
-            <tbody>
-              {entries.map(e => {
-                const entryCurrency = (e.currency as Currency) || "USD";
-                const converted = amountIn(e);
-                const showConversion = entryCurrency !== displayCurrency;
-                return (
-                  <tr key={e.id} onMouseEnter={() => setHov(String(e.id))} onMouseLeave={() => setHov(null)} style={{ background: hov === String(e.id) ? "var(--bg-card-hover)" : "transparent" }}>
-                    <td style={{ fontSize:12, color:"var(--text-primary)", fontWeight:600 }}>{e.month} {e.year}</td>
-                    <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{e.departmentName}</td>
-                    <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{e.description}</td>
-                    <td>
-                      <div style={{ fontSize:13, fontWeight:700, color:"var(--success)" }}>
-                        {formatMoney(converted, displayCurrency)}
+      ) : sortedEntries.length === 0 ? (
+        <EmptyState icon="🔎" title="No matches" desc="Try adjusting your filters." />
+      ) : (() => {
+        const groups = new Map<string, { label: string; items: typeof sortedEntries; total: number }>();
+        for (const e of sortedEntries) {
+          const key = `${e.year}-${e.month}`;
+          if (!groups.has(key)) groups.set(key, { label: `${e.month} ${e.year}`, items: [], total: 0 });
+          const g = groups.get(key)!;
+          g.items.push(e);
+          g.total += amountIn(e);
+        }
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {Array.from(groups.entries()).map(([key, group]) => {
+              const isCollapsed = !!collapsedMonths[key];
+              return (
+                <div key={key} className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
+                  <div
+                    onClick={() => toggleMonth(key)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 12,
+                      padding: "12px 16px", cursor: "pointer",
+                      background: "var(--bg-input)",
+                      borderBottom: isCollapsed ? "none" : "1px solid var(--border-divider)",
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>{group.label}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                        {group.items.length} {group.items.length === 1 ? "entry" : "entries"}
                       </div>
-                      {showConversion && (
-                        <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>
-                          {formatMoney(e.amount, entryCurrency)} {entryCurrency}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ display:"flex", gap:5 }}>
-                        <button onClick={() => openEdit(e)} style={{ padding:"3px 8px", borderRadius:6, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
-                        <button onClick={() => del(e.id)} style={{ padding:"3px 8px", borderRadius:6, border:"none", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: "var(--success)" }}>
+                      {formatMoney(group.total, displayCurrency)}
+                    </div>
+                    <span style={{ fontSize: 14, color: "var(--text-muted)", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform .2s" }}>▾</span>
+                  </div>
+                  {!isCollapsed && (
+                    <table className="hub-table">
+                      <thead><tr>{["Date","Department","Description","Amount",""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {group.items.map(e => {
+                          const entryCurrency = (e.currency as Currency) || "USD";
+                          const converted = amountIn(e);
+                          const showConversion = entryCurrency !== displayCurrency;
+                          return (
+                            <tr key={e.id} onMouseEnter={() => setHov(String(e.id))} onMouseLeave={() => setHov(null)} style={{ background: hov === String(e.id) ? "var(--bg-card-hover)" : "transparent" }}>
+                              <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                                {(e as unknown as { entryDate?: string }).entryDate
+                                  ? new Date((e as unknown as { entryDate: string }).entryDate + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                                  : "—"}
+                              </td>
+                              <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{e.departmentName || <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>General</span>}</td>
+                              <td style={{ fontSize:12, color:"var(--text-secondary)" }}>{e.description}</td>
+                              <td>
+                                <div style={{ fontSize:13, fontWeight:700, color:"var(--success)" }}>
+                                  {formatMoney(converted, displayCurrency)}
+                                </div>
+                                {showConversion && (
+                                  <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>
+                                    {formatMoney(e.amount, entryCurrency)} {entryCurrency}
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <div style={{ display:"flex", gap:5 }}>
+                                  <button onClick={() => openEdit(e)} style={{ padding:"3px 8px", borderRadius:6, border:"1px solid var(--border-card)", background:"var(--bg-input)", color:"var(--text-secondary)", fontSize:11, cursor:"pointer" }}>Edit</button>
+                                  <button onClick={() => del(e.id)} style={{ padding:"3px 8px", borderRadius:6, border:"none", background:"var(--danger-bg)", color:"var(--danger)", fontSize:11, cursor:"pointer" }}>✕</button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Revenue Entry">
         {entryForm}

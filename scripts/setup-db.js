@@ -300,6 +300,34 @@ async function runAdditiveMigrations() {
     // investor birthdays alongside employees.
     `ALTER TABLE investors ADD COLUMN IF NOT EXISTS birthday DATE`,
     `ALTER TABLE investors ADD COLUMN IF NOT EXISTS birthday_notifications BOOLEAN DEFAULT FALSE`,
+    // Recurring expenses — templates that generate expense entries on a
+    // schedule. Paying marks the period and creates a linked expense_entry.
+    `CREATE TABLE IF NOT EXISTS recurring_expenses (
+      id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name               VARCHAR(255) NOT NULL,
+      amount             DECIMAL NOT NULL DEFAULT 0,
+      currency           VARCHAR(3) DEFAULT 'USD',
+      department_id      ${deptIdType},
+      description        TEXT,
+      frequency          VARCHAR(20) NOT NULL DEFAULT 'monthly',
+      next_due_date      DATE NOT NULL,
+      notify_days_before INTEGER DEFAULT 3,
+      is_active          BOOLEAN DEFAULT TRUE,
+      notes              TEXT,
+      created_by         UUID REFERENCES users(id),
+      created_at         TIMESTAMP DEFAULT NOW(),
+      updated_at         TIMESTAMP DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS recurring_expense_payments (
+      id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      recurring_expense_id UUID NOT NULL REFERENCES recurring_expenses(id) ON DELETE CASCADE,
+      expense_entry_id     UUID,
+      paid_for_date        DATE NOT NULL,
+      paid_at              TIMESTAMP DEFAULT NOW(),
+      paid_by              UUID REFERENCES users(id),
+      UNIQUE(recurring_expense_id, paid_for_date)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_recurring_expenses_due ON recurring_expenses(next_due_date) WHERE is_active = TRUE`,
 
     // Departments — free-text notes shown on the department detail page.
     // Replaces the old "health" field in the edit form.

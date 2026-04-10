@@ -1,11 +1,27 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
-import { Modal, FormField, HubInput, HubSelect, useToast, ToastList, EmptyState } from "@/components/ui/shared";
+import { Modal, FormField, HubInput, HubSelect, HubTextarea, ConfirmModal, useToast, ToastList, EmptyState } from "@/components/ui/shared";
 import type { ExpenseEntry, Department } from "@/lib/types";
 import { formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
 import { useCurrency } from "@/lib/CurrencyContext";
-import { Camera, Loader2 } from "lucide-react";
+import { Camera, Loader2, Repeat, DollarSign } from "lucide-react";
+
+interface RecurringExpense {
+  id: string;
+  name: string;
+  amount: number;
+  currency: string;
+  departmentId?: string | null;
+  departmentName?: string;
+  description?: string | null;
+  frequency: string;
+  nextDueDate: string;
+  notifyDaysBefore: number;
+  isActive: boolean;
+  notes?: string | null;
+}
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const blank = {
@@ -32,6 +48,28 @@ export default function ExpensesPage() {
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
   const [hov, setHov]         = useState<string | null>(null);
+  // Tab: "onetime" | "recurring"
+  const [tab, setTab] = useState<"onetime" | "recurring">("onetime");
+  // Recurring expenses state
+  const [recurring, setRecurring] = useState<RecurringExpense[]>([]);
+  const [showRecAdd, setShowRecAdd] = useState(false);
+  const [recEditing, setRecEditing] = useState<RecurringExpense | null>(null);
+  const [recDeleting, setRecDeleting] = useState<RecurringExpense | null>(null);
+  const [recForm, setRecForm] = useState({
+    name: "",
+    amount: 0,
+    currency: "USD" as Currency,
+    departmentId: "" as string,
+    description: "",
+    frequency: "monthly",
+    nextDueDate: new Date().toISOString().slice(0, 10),
+    notifyDaysBefore: 3,
+    isActive: true,
+    notes: "",
+  });
+  const { data: session } = useSession();
+  const myRole = (session?.user as { role?: string })?.role ?? "member";
+  const isAdminUser = myRole === "admin" || myRole === "super_admin";
   // Filter & sort state
   const [fMonth, setFMonth] = useState<string>("");
   const [fYear, setFYear]   = useState<string>("");
@@ -60,8 +98,87 @@ export default function ExpensesPage() {
   const load = () => Promise.all([
     fetch("/api/expenses").then(r => r.json()),
     fetch("/api/departments").then(r => r.json()),
-  ]).then(([e, d]) => { setEntries(e.data ?? []); setDepts(d.data ?? []); setLoading(false); });
+    fetch("/api/recurring-expenses").then(r => r.json()).catch(() => ({ data: [] })),
+  ]).then(([e, d, re]) => {
+    setEntries(e.data ?? []);
+    setDepts(d.data ?? []);
+    setRecurring(re.data ?? []);
+    setLoading(false);
+  });
   useEffect(() => { load(); }, []);
+
+  // ── Recurring expense handlers ──
+  const openRecAdd = () => {
+    setRecForm({
+      name: "", amount: 0, currency: "USD", departmentId: "",
+      description: "", frequency: "monthly",
+      nextDueDate: new Date().toISOString().slice(0, 10),
+      notifyDaysBefore: 3, isActive: true, notes: "",
+    });
+    setShowRecAdd(true);
+  };
+  const openRecEdit = (r: RecurringExpense) => {
+    setRecEditing(r);
+    setRecForm({
+      name: r.name,
+      amount: r.amount,
+      currency: r.currency as Currency,
+      departmentId: String(r.departmentId ?? ""),
+      description: r.description ?? "",
+      frequency: r.frequency,
+      nextDueDate: r.nextDueDate,
+      notifyDaysBefore: r.notifyDaysBefore,
+      isActive: r.isActive,
+      notes: r.notes ?? "",
+    });
+  };
+  const saveRec = async () => {
+    if (!recForm.name || !recForm.nextDueDate) return toast("Name and due date required", "er");
+    const url = recEditing ? `/api/recurring-expenses/${recEditing.id}` : "/api/recurring-expenses";
+    const method = recEditing ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...recForm,
+        departmentId: recForm.departmentId || null,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return toast(err.error || "Failed", "er");
+    }
+    await load();
+    setShowRecAdd(false);
+    setRecEditing(null);
+    toast(recEditing ? "Recurring expense updated" : "Recurring expense added");
+  };
+  const delRec = async () => {
+    if (!recDeleting) return;
+    await fetch(`/api/recurring-expenses/${recDeleting.id}`, { method: "DELETE" });
+    await load();
+    setRecDeleting(null);
+    toast("Deleted", "er");
+  };
+  const payRec = async (r: RecurringExpense) => {
+    if (!confirm(`Mark "${r.name}" as paid for ${r.nextDueDate}?\n\nThis will create an expense entry for ${r.currency} ${r.amount.toLocaleString()} and advance the next due date.`)) return;
+    const res = await fetch(`/api/recurring-expenses/${r.id}/pay`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); return toast(e.error || "Failed", "er"); }
+    await load();
+    toast(`Paid: ${r.currency} ${r.amount.toLocaleString()} · expense entry created`);
+  };
+  const checkDue = async () => {
+    const res = await fetch("/api/recurring-expenses/check-due", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      toast(`${data.data?.dueCount ?? 0} due · ${data.data?.notificationsCreated ?? 0} notifications sent`);
+    } else {
+      toast(data.error || "Check failed", "er");
+    }
+  };
 
   const amountIn = (e: ExpenseEntry) => convert(e.amount, (e.currency as Currency) || "USD", displayCurrency);
 
@@ -315,6 +432,31 @@ export default function ExpensesPage() {
       />
       <ToastList ts={ts} />
 
+      {/* Tabs: One-time vs Recurring */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: "1px solid var(--border-divider)" }}>
+        {([
+          ["onetime", `One-Time (${entries.length})`, DollarSign],
+          ["recurring", `Recurring (${recurring.length})`, Repeat],
+        ] as const).map(([key, label, Icon]) => {
+          const active = tab === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              style={{
+                padding: "9px 16px", border: "none", background: "transparent",
+                color: active ? "var(--accent)" : "var(--text-secondary)",
+                fontSize: 12, fontWeight: 700, cursor: "pointer",
+                borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
+                marginBottom: -1, display: "flex", alignItems: "center", gap: 6,
+              }}
+            >
+              <Icon size={13} /> {label}
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 11, color: "var(--text-secondary)", flexWrap: "wrap" }}>
         <button
           onClick={() => setShowScanner(true)}
@@ -410,6 +552,7 @@ export default function ExpensesPage() {
         </div>
       )}
 
+      {tab === "onetime" && (<>
       {/* Filters + sort */}
       {entries.length > 0 && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12, padding: "10px 12px", background: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: 10 }}>
@@ -558,6 +701,139 @@ export default function ExpensesPage() {
           </div>
         );
       })()}
+      </>)}
+
+      {/* ── Recurring expenses tab ── */}
+      {tab === "recurring" && (
+        <div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              {recurring.length} recurring expense{recurring.length === 1 ? "" : "s"}
+              {!isAdminUser && " · Only admin/super admin can add or edit"}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={checkDue} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                Check Due Notifications
+              </button>
+              {isAdminUser && (
+                <button onClick={openRecAdd} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  + Add Recurring
+                </button>
+              )}
+            </div>
+          </div>
+          {recurring.length === 0 ? (
+            <EmptyState icon="🔁" title="No recurring expenses" desc={isAdminUser ? "Set up monthly rent, software subscriptions, salaries, etc." : "Ask an admin to set up recurring expenses."} />
+          ) : (
+            <div className="hub-card" style={{ padding: 0, overflow: "hidden" }}>
+              <table className="hub-table">
+                <thead><tr>{["Name","Amount","Frequency","Next Due","Department","Status",""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {recurring.map(r => {
+                    const daysUntil = Math.ceil((new Date(r.nextDueDate + "T00:00:00").getTime() - new Date().setHours(0,0,0,0)) / 86400000);
+                    const urgent = daysUntil <= r.notifyDaysBefore;
+                    return (
+                      <tr key={r.id}>
+                        <td>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{r.name}</div>
+                          {r.description && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{r.description}</div>}
+                        </td>
+                        <td style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)" }}>{formatMoney(r.amount, r.currency as Currency)}</td>
+                        <td style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "capitalize" }}>{r.frequency}</td>
+                        <td>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: urgent ? "var(--danger)" : "var(--text-primary)" }}>
+                            {new Date(r.nextDueDate + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                          </div>
+                          <div style={{ fontSize: 10, color: urgent ? "var(--danger)" : "var(--text-muted)", marginTop: 2 }}>
+                            {daysUntil < 0 ? `${Math.abs(daysUntil)} days overdue` : daysUntil === 0 ? "Due today" : `In ${daysUntil} day${daysUntil === 1 ? "" : "s"}`}
+                          </div>
+                        </td>
+                        <td style={{ fontSize: 11, color: "var(--text-secondary)" }}>{r.departmentName || <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>General</span>}</td>
+                        <td>
+                          {r.isActive ? (
+                            <span style={{ padding: "2px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, background: "var(--success-bg)", color: "var(--success)" }}>Active</span>
+                          ) : (
+                            <span style={{ padding: "2px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, background: "var(--bg-input)", color: "var(--text-muted)" }}>Paused</span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 5 }}>
+                            <button onClick={() => payRec(r)} title="Mark as paid — creates expense entry" style={{ padding: "4px 9px", borderRadius: 7, border: "1px solid var(--success)44", background: "var(--success-bg)", color: "var(--success)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Pay</button>
+                            {isAdminUser && (
+                              <>
+                                <button onClick={() => openRecEdit(r)} style={{ padding: "4px 9px", borderRadius: 7, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}>Edit</button>
+                                <button onClick={() => setRecDeleting(r)} style={{ padding: "4px 7px", borderRadius: 7, border: "1px solid rgba(220,38,38,.3)", background: "var(--danger-bg)", color: "var(--danger)", fontSize: 11, cursor: "pointer" }}>✕</button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recurring expense form modal */}
+      <Modal open={showRecAdd || !!recEditing} onClose={() => { setShowRecAdd(false); setRecEditing(null); }} title={recEditing ? `Edit: ${recEditing.name}` : "Add Recurring Expense"} width={520}>
+        <FormField label="Name">
+          <HubInput value={recForm.name} onChange={e => setRecForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Office rent, Shopify subscription" />
+        </FormField>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+          <FormField label="Amount">
+            <HubInput type="number" value={recForm.amount || ""} onChange={e => setRecForm(p => ({ ...p, amount: +e.target.value }))} />
+          </FormField>
+          <FormField label="Currency">
+            <HubSelect value={recForm.currency} onChange={e => setRecForm(p => ({ ...p, currency: e.target.value as Currency }))}>
+              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </HubSelect>
+          </FormField>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Frequency">
+            <HubSelect value={recForm.frequency} onChange={e => setRecForm(p => ({ ...p, frequency: e.target.value }))}>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Bi-weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
+            </HubSelect>
+          </FormField>
+          <FormField label="Next Due Date">
+            <HubInput type="date" value={recForm.nextDueDate} onChange={e => setRecForm(p => ({ ...p, nextDueDate: e.target.value }))} />
+          </FormField>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Department">
+            <HubSelect value={recForm.departmentId} onChange={e => setRecForm(p => ({ ...p, departmentId: e.target.value }))}>
+              <option value="">General</option>
+              {depts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+            </HubSelect>
+          </FormField>
+          <FormField label="Notify N days before">
+            <HubInput type="number" value={recForm.notifyDaysBefore} onChange={e => setRecForm(p => ({ ...p, notifyDaysBefore: +e.target.value }))} />
+          </FormField>
+        </div>
+        <FormField label="Description">
+          <HubInput value={recForm.description} onChange={e => setRecForm(p => ({ ...p, description: e.target.value }))} placeholder="Optional — shown on expense entries" />
+        </FormField>
+        <FormField label="Notes">
+          <HubTextarea value={recForm.notes} onChange={e => setRecForm(p => ({ ...p, notes: e.target.value }))} rows={2} />
+        </FormField>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-primary)", marginBottom: 12, cursor: "pointer" }}>
+          <input type="checkbox" checked={recForm.isActive} onChange={e => setRecForm(p => ({ ...p, isActive: e.target.checked }))} style={{ accentColor: "var(--accent)" }} />
+          Active (inactive expenses won&apos;t trigger notifications)
+        </label>
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+          <button onClick={() => { setShowRecAdd(false); setRecEditing(null); }} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+          <button onClick={saveRec} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
+        </div>
+      </Modal>
+
+      <ConfirmModal open={!!recDeleting} onClose={() => setRecDeleting(null)} onConfirm={delRec} name={recDeleting?.name ?? ""} entity="recurring expense" />
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Expense Entry">
         {expenseForm}
