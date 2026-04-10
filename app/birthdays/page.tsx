@@ -12,6 +12,8 @@ interface BirthdayUser {
   mmdd: string;
   daysUntil: number;
   turningAge?: number;
+  kind?: "employee" | "investor";
+  company?: string;
 }
 
 interface BirthdaysResponse {
@@ -250,8 +252,10 @@ export default function BirthdaysPage() {
           }}>
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-divider)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "var(--bg-card)", zIndex: 1 }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>All Team Birthdays</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{data?.all?.length ?? 0} employees</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>All Birthdays</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                  {data?.all?.filter(u => u.kind !== "investor").length ?? 0} employees · {data?.all?.filter(u => u.kind === "investor").length ?? 0} investors
+                </div>
               </div>
               <button onClick={() => setShowAllDrawer(false)} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", display: "flex" }}>
                 <X size={18} />
@@ -280,10 +284,18 @@ export default function BirthdaysPage() {
                       }}>
                         <Avatar s={u.initials} size={36} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+                            {u.name}
+                            {u.kind === "investor" && (
+                              <span style={{ fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 4, background: "var(--violet-bg)", color: "var(--violet)", letterSpacing: ".06em", textTransform: "uppercase" }}>
+                                Investor
+                              </span>
+                            )}
+                          </div>
                           <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
                             {new Date(u.birthday + "T00:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric" })}
                             {u.turningAge != null && ` - turning ${u.turningAge}`}
+                            {u.company && ` · ${u.company}`}
                           </div>
                         </div>
                         <div style={{ fontSize: 10, fontWeight: 700, color: accent, flexShrink: 0, textAlign: "right" }}>

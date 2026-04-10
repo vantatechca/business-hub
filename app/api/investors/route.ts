@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, rowsToCamel, toCamel } from "@/lib/db";
+import { sql, rowsToCamel, toCamel, toDateString } from "@/lib/db";
 import { getSessionUser, isManagerOrHigher } from "@/lib/authz";
 import bcrypt from "bcryptjs";
 
 function shape(r: Record<string, unknown>): Record<string, unknown> {
-  return { ...r, investmentAmount: Number(r.investmentAmount) };
+  const out: Record<string, unknown> = { ...r, investmentAmount: Number(r.investmentAmount) };
+  if (out.birthday != null) out.birthday = toDateString(out.birthday);
+  return out;
 }
 
 export async function GET() {
@@ -14,10 +16,7 @@ export async function GET() {
   }
   try {
     const rows = await sql`
-      SELECT i.id, i.name, i.email, i.phone, i.company,
-             i.investment_amount, i.currency, i.notes, i.avatar_url,
-             i.user_id, i.is_active, i.created_at, i.updated_at,
-             u.name AS user_name, u.email AS user_email
+      SELECT i.*, u.name AS user_name, u.email AS user_email
       FROM investors i
       LEFT JOIN users u ON u.id = i.user_id
       ORDER BY i.created_at DESC
@@ -56,26 +55,44 @@ export async function POST(req: NextRequest) {
       accountCreated = true;
     }
 
-    const rows = await sql`
-      INSERT INTO investors (name, email, phone, company, investment_amount, currency, notes, user_id)
-      VALUES (
-        ${b.name},
-        ${b.email || null},
-        ${b.phone || null},
-        ${b.company || null},
-        ${Number(b.investmentAmount) || 0},
-        ${b.currency || "USD"},
-        ${b.notes || null},
-        ${userId}
-      )
-      RETURNING id
-    `;
+    // Try with birthday columns first; fall back if they don't exist
+    let rows;
+    try {
+      rows = await sql`
+        INSERT INTO investors (name, email, phone, company, investment_amount, currency, notes, user_id, birthday, birthday_notifications)
+        VALUES (
+          ${b.name},
+          ${b.email || null},
+          ${b.phone || null},
+          ${b.company || null},
+          ${Number(b.investmentAmount) || 0},
+          ${b.currency || "USD"},
+          ${b.notes || null},
+          ${userId},
+          ${b.birthday || null},
+          ${!!b.birthdayNotifications}
+        )
+        RETURNING id
+      `;
+    } catch {
+      rows = await sql`
+        INSERT INTO investors (name, email, phone, company, investment_amount, currency, notes, user_id)
+        VALUES (
+          ${b.name},
+          ${b.email || null},
+          ${b.phone || null},
+          ${b.company || null},
+          ${Number(b.investmentAmount) || 0},
+          ${b.currency || "USD"},
+          ${b.notes || null},
+          ${userId}
+        )
+        RETURNING id
+      `;
+    }
     const id = (rows[0] as Record<string, unknown>).id as string;
     const full = await sql`
-      SELECT i.id, i.name, i.email, i.phone, i.company,
-             i.investment_amount, i.currency, i.notes, i.avatar_url,
-             i.user_id, i.is_active, i.created_at, i.updated_at,
-             u.name AS user_name, u.email AS user_email
+      SELECT i.*, u.name AS user_name, u.email AS user_email
       FROM investors i
       LEFT JOIN users u ON u.id = i.user_id
       WHERE i.id = ${id}

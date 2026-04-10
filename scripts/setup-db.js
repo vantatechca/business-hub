@@ -296,6 +296,10 @@ async function runAdditiveMigrations() {
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence VARCHAR(20) DEFAULT 'one-time'`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS goal_value DECIMAL DEFAULT 0`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS done_value DECIMAL DEFAULT 0`,
+    // Investors — birthday and notification flag so managers can track
+    // investor birthdays alongside employees.
+    `ALTER TABLE investors ADD COLUMN IF NOT EXISTS birthday DATE`,
+    `ALTER TABLE investors ADD COLUMN IF NOT EXISTS birthday_notifications BOOLEAN DEFAULT FALSE`,
 
     // Departments — free-text notes shown on the department detail page.
     // Replaces the old "health" field in the edit form.
