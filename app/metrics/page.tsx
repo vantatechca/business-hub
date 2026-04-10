@@ -94,6 +94,8 @@ export default function MetricsPage() {
   // Department notes editing
   const [deptNotesModal, setDeptNotesModal] = useState<Department | null>(null);
   const [deptNotesForm, setDeptNotesForm]   = useState({ notes: "", googleSheetUrl: "" });
+  const [showNewDept, setShowNewDept] = useState(false);
+  const [newDeptName, setNewDeptName] = useState("");
   const { ts, toast } = useToast();
 
   // ── DATA LOADING ──────────────────────────────────────────
@@ -213,10 +215,55 @@ export default function MetricsPage() {
   const metricForm = (
     <div>
       <FormField label="Department">
-        <HubSelect value={form.departmentId} onChange={e => setForm(p => ({ ...p, departmentId: e.target.value }))}>
+        <HubSelect
+          value={form.departmentId}
+          onChange={e => {
+            if (e.target.value === "__new__") { setShowNewDept(true); setNewDeptName(""); }
+            else setForm(p => ({ ...p, departmentId: e.target.value }));
+          }}
+        >
           <option value="__general__">General (no department)</option>
           {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          <option value="__new__">+ Add New Department</option>
         </HubSelect>
+        {showNewDept && (
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            <HubInput
+              value={newDeptName}
+              onChange={e => setNewDeptName(e.target.value)}
+              placeholder="New department name…"
+              autoFocus
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("create-dept-btn")?.click(); } }}
+            />
+            <button
+              id="create-dept-btn"
+              onClick={async () => {
+                if (!newDeptName.trim()) return;
+                const res = await fetch("/api/departments", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: newDeptName.trim() }),
+                });
+                if (res.ok) {
+                  const d = await res.json();
+                  const newId = d.data?.id;
+                  await load();
+                  if (newId) setForm(p => ({ ...p, departmentId: String(newId) }));
+                  setShowNewDept(false);
+                  toast(`Department "${newDeptName.trim()}" created`);
+                } else { toast("Failed to create department", "er"); }
+              }}
+              style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              Add
+            </button>
+            <button
+              onClick={() => setShowNewDept(false)}
+              style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </FormField>
       <FormField label="Metric Name">
         <HubInput value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. GMC accounts created today" />

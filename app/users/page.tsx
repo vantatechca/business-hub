@@ -84,10 +84,11 @@ export default function UsersPage() {
     });
   useEffect(() => { load(); }, []);
 
+  const ROLE_ORDER: Record<string, number> = { super_admin: 0, admin: 1, manager: 2, leader: 2, lead: 3, member: 4 };
   const rows = users.filter(u =>
     (u.name.toLowerCase().includes(q.toLowerCase()) || u.email.toLowerCase().includes(q.toLowerCase())) &&
     (!rf || u.role === rf)
-  );
+  ).sort((a, b) => (ROLE_ORDER[a.role] ?? 5) - (ROLE_ORDER[b.role] ?? 5) || a.name.localeCompare(b.name));
 
   const save = async () => {
     if (!form.name || !form.email) return toast("Name and email required", "er");
@@ -363,7 +364,20 @@ export default function UsersPage() {
               {["User","Email","Role","Timezone","Last Login",""].map(h => <th key={h}>{h}</th>)}
             </tr></thead>
             <tbody>
-              {rows.map(u => (
+              {rows.map((u, i) => {
+                const prevRole = i > 0 ? rows[i - 1].role : null;
+                const norm = (r: string) => r === "leader" ? "manager" : r;
+                const showSep = i === 0 || norm(u.role) !== norm(prevRole ?? "");
+                const roleLabel = norm(u.role) === "super_admin" ? "Super Admins" : norm(u.role) === "admin" ? "Admins" : norm(u.role) === "manager" ? "Managers" : norm(u.role) === "lead" ? "Leads" : "Members";
+                const roleCount = rows.filter(r => norm(r.role) === norm(u.role)).length;
+                return (<>
+                {showSep && (
+                  <tr key={`sep-${norm(u.role)}`}>
+                    <td colSpan={10} style={{ padding: "10px 14px 6px", background: "var(--bg-base)", fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".08em", textTransform: "uppercase", borderBottom: "1px solid var(--border-divider)" }}>
+                      {roleLabel} ({roleCount})
+                    </td>
+                  </tr>
+                )}
                 <tr key={u.id} style={{ cursor: "pointer", background: selected.has(u.id) ? "var(--accent-bg)" : undefined }} onClick={() => setDrawerUserId(String(u.id))}>
                   {isAdmin && <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleSelect(u.id)} style={{ cursor: "pointer", accentColor: "var(--accent)" }} /></td>}
                   <td>
@@ -390,7 +404,8 @@ export default function UsersPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+              </>);
+              })}
             </tbody>
           </table>
         </div>

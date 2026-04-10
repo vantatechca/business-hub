@@ -105,12 +105,13 @@ export default function TeamPage() {
   });
   useEffect(() => { load(); }, []);
 
+  const ROLE_ORDER: Record<string, number> = { super_admin: 0, admin: 1, manager: 2, leader: 2, lead: 3, member: 4 };
   const rows = team.filter(m =>
     (m.name.toLowerCase().includes(q.toLowerCase())
       || (m.jobTitle ?? "").toLowerCase().includes(q.toLowerCase())
       || (m.departments ?? []).some(d => (d.name ?? "").toLowerCase().includes(q.toLowerCase())))
     && (!df || (m.departments ?? []).some(d => (d.name ?? "") === df))
-  );
+  ).sort((a, b) => (ROLE_ORDER[a.role] ?? 5) - (ROLE_ORDER[b.role] ?? 5) || a.name.localeCompare(b.name));
 
   const openAdd = () => {
     setForm({ ...blank, departmentIds: [] });
@@ -328,7 +329,21 @@ export default function TeamPage() {
               })()}
             </thead>
             <tbody>
-              {rows.map(m => (
+              {rows.map((m, i) => {
+                const prevRole = i > 0 ? rows[i - 1].role : null;
+                const normalizedRole = m.role === "leader" ? "manager" : m.role;
+                const normalizedPrev = prevRole === "leader" ? "manager" : prevRole;
+                const showSeparator = i === 0 || normalizedRole !== normalizedPrev;
+                const roleLabel = normalizedRole === "super_admin" ? "Super Admins" : normalizedRole === "admin" ? "Admins" : normalizedRole === "manager" ? "Managers" : normalizedRole === "lead" ? "Leads" : "Members";
+                const roleCount = rows.filter(r => (r.role === "leader" ? "manager" : r.role) === normalizedRole).length;
+                return (<>
+                {showSeparator && (
+                  <tr key={`sep-${normalizedRole}`}>
+                    <td colSpan={10} style={{ padding: "10px 14px 6px", background: "var(--bg-base)", fontSize: 10, fontWeight: 800, color: "var(--text-muted)", letterSpacing: ".08em", textTransform: "uppercase", borderBottom: "1px solid var(--border-divider)" }}>
+                      {roleLabel} ({roleCount})
+                    </td>
+                  </tr>
+                )}
                 <tr
                   key={m.id}
                   onMouseEnter={() => setHov(String(m.id))}
@@ -383,7 +398,8 @@ export default function TeamPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+              </>);
+              })}
             </tbody>
           </table>
         </div>
