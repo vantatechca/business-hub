@@ -43,8 +43,11 @@ export default function AssignmentsPage() {
   });
   useEffect(() => { load(); }, []);
 
+  const ROLE_ORDER: Record<string, number> = { owner: 0, contributor: 1, reviewer: 2 };
   const metricAssignees = (metricId: string) =>
-    assignments.filter(a => a.metricId === metricId);
+    assignments
+      .filter(a => a.metricId === metricId)
+      .sort((a, b) => (ROLE_ORDER[a.roleInMetric] ?? 9) - (ROLE_ORDER[b.roleInMetric] ?? 9));
 
   const assign = async () => {
     if (!selected || !aForm.userId) return toast("Select a user", "er");

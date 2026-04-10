@@ -69,7 +69,7 @@ export default function DepartmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   // Active tab — changes which section renders below the department header.
-  const [tab, setTab] = useState<"tasks" | "metrics" | "team" | "expenses" | "revenue">("tasks");
+  const [tab, setTab] = useState<"tasks" | "metrics" | "team" | "expenses" | "revenue">("metrics");
   const { ts, toast } = useToast();
 
   // Task CRUD state
@@ -607,8 +607,8 @@ export default function DepartmentDetailPage() {
       {/* Tab bar — switches which section renders below the header. */}
       <div style={{ display: "flex", gap: 4, marginTop: 14, marginBottom: 11, borderBottom: "1px solid var(--border-divider)" }}>
         {([
-          ["tasks",    `Tasks (${myTasks.length})`],
           ["metrics",  `Metrics (${myMetrics.length})`],
+          ["tasks",    `Tasks (${myTasks.length})`],
           ["team",     `Team (${myTeam.length})`],
           ["expenses", `Expenses (${myExpenses.length})`],
           ["revenue",  `Revenue (${myRevenue.length})`],
