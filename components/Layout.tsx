@@ -20,7 +20,7 @@ import { hasCheckedInToday } from "./CheckInGate";
 const NAV = [
   { s:"MAIN", items:[
     {id:"dashboard",l:"Dashboard",h:"/dashboard",I:LayoutDashboard},
-    {id:"analytics",l:"Analytics",h:"/analytics",I:TrendingUp},
+    {id:"analytics",l:"Analytics",h:"/analytics",I:TrendingUp, mgrOnly:true},
   ]},
   { s:"OPERATIONS", items:[
     {id:"departments",l:"Departments",h:"/departments",I:Network},
@@ -421,7 +421,6 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
           without having submitted their daily check-in. */}
       {showLogoutCheckin && (
         <div
-          onClick={e => { if (e.target === e.currentTarget) setShowLogoutCheckin(false); }}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           <div style={{
@@ -431,25 +430,17 @@ export default function AppLayout({ children, title, onNew, newLabel="New" }: { 
           }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>📝</div>
             <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text-primary)", marginBottom: 6 }}>
-              You haven&apos;t checked in today
+              Check-in required before signing out
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.5 }}>
-              Would you like to submit your daily check-in before signing out?
+              Please submit your daily check-in before signing out. This helps the team stay aligned.
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={() => { setShowLogoutCheckin(false); signOut({ callbackUrl: "/login" }); }}
-                style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1px solid var(--border-card)", background: "var(--bg-input)", color: "var(--text-secondary)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-              >
-                Sign out anyway
-              </button>
-              <button
-                onClick={() => { setShowLogoutCheckin(false); /* Open the check-in modal via the dashboard gate */ window.location.href = "/dashboard"; }}
-                style={{ flex: 1, padding: "10px 14px", borderRadius: 10, background: "var(--accent)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-              >
-                Check in first
-              </button>
-            </div>
+            <button
+              onClick={() => { setShowLogoutCheckin(false); window.location.href = "/dashboard"; }}
+              style={{ width: "100%", padding: "12px 14px", borderRadius: 10, background: "var(--accent)", color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+            >
+              Submit Check-In Now
+            </button>
           </div>
         </div>
       )}
