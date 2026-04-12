@@ -4,6 +4,8 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import AppLayout from "@/components/Layout";
 import { Modal, FormField, HubInput, HubTextarea, ConfirmModal, useToast, ToastList, EmptyState } from "@/components/ui/shared";
+import AiSearchBar from "@/components/AiSearchBar";
+import { useAiSearch } from "@/lib/useAiSearch";
 import { Sortable, useSortableItem, overlayCardStyle } from "@/components/ui/Sortable";
 import { GripVertical } from "lucide-react";
 import type { Department } from "@/lib/types";
@@ -55,16 +57,27 @@ export default function DepartmentsPage() {
   const [q, setQ] = useState("");
   const { ts, toast } = useToast();
 
+  const ai = useAiSearch("departments");
+  const runDeptsAi = () => {
+    const items = depts.map(d => ({
+      id: String(d.id),
+      text: [d.name, d.description, d.notes].filter(Boolean).join(" | "),
+    }));
+    ai.runAiSearch(items);
+  };
+
   // Filtered list — name + description (head). Empty query shows everything.
-  const filteredDepts = q.trim()
-    ? depts.filter(d => {
-        const needle = q.toLowerCase();
-        return (
-          d.name.toLowerCase().includes(needle)
-          || (d.description ?? "").toLowerCase().includes(needle)
-        );
-      })
-    : depts;
+  const filteredDepts = (() => {
+    if (ai.aiMode && ai.matchedIds) {
+      return depts.filter(d => ai.matchedIds!.has(String(d.id)));
+    }
+    if (!q.trim()) return depts;
+    const needle = q.toLowerCase();
+    return depts.filter(d =>
+      d.name.toLowerCase().includes(needle)
+      || (d.description ?? "").toLowerCase().includes(needle),
+    );
+  })();
 
   const handleReorder = async (ids: (string | number)[]) => {
     const map = new Map(depts.map(d => [String(d.id), d]));
@@ -180,18 +193,25 @@ export default function DepartmentsPage() {
     <AppLayout title="Departments" onNew={canEdit ? openAdd : undefined} newLabel="Add Department">
       <ToastList ts={ts} />
 
+      <div style={{ marginBottom: 14 }}>
+        <AiSearchBar
+          aiMode={ai.aiMode}
+          setAiMode={ai.setAiMode}
+          q={ai.aiMode ? ai.q : q}
+          setQ={(v) => ai.aiMode ? ai.setQ(v) : setQ(v)}
+          loading={ai.loading}
+          onRun={runDeptsAi}
+          clear={ai.clear}
+          placeholder="Ask anything... e.g. 'departments related to sales'"
+          plainPlaceholder="Search departments by name or description…"
+          matchCount={filteredDepts.length}
+          hasMatches={!!ai.matchedIds}
+          explanation={ai.explanation}
+        />
+      </div>
       {/* Search + counter row. Reordering is disabled while a search filter
           is active because the visible list isn't the canonical order. */}
       <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 200, display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: 8, padding: "7px 11px" }}>
-          <span style={{ color: "var(--text-muted)", fontSize: 14 }}>⌕</span>
-          <input
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Search departments by name or description…"
-            style={{ border: "none", background: "transparent", outline: "none", fontSize: 12, color: "var(--text-primary)", width: "100%" }}
-          />
-        </div>
         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
           {filteredDepts.length} department{filteredDepts.length !== 1 ? "s" : ""}
           {q && depts.length !== filteredDepts.length && ` of ${depts.length}`}

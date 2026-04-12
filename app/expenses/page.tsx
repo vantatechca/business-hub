@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import AppLayout from "@/components/Layout";
 import { Modal, FormField, HubInput, HubSelect, HubTextarea, ConfirmModal, useToast, ToastList, EmptyState } from "@/components/ui/shared";
+import AiSearchBar from "@/components/AiSearchBar";
+import { useAiSearch } from "@/lib/useAiSearch";
 import type { ExpenseEntry, Department } from "@/lib/types";
 import { formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
 import { useCurrency } from "@/lib/CurrencyContext";
@@ -70,6 +72,14 @@ export default function ExpensesPage() {
   const { data: session } = useSession();
   const myRole = (session?.user as { role?: string })?.role ?? "member";
   const isAdminUser = myRole === "admin" || myRole === "super_admin";
+  const ai = useAiSearch("expenses");
+  const runExpensesAi = () => {
+    const items = entries.map(e => ({
+      id: String(e.id),
+      text: [e.description, e.departmentName, `${e.currency} ${e.amount}`, `${e.month} ${e.year}`].filter(Boolean).join(" | "),
+    }));
+    ai.runAiSearch(items);
+  };
   // Filter & sort state
   const [fMonth, setFMonth] = useState<string>("");
   const [fYear, setFYear]   = useState<string>("");
@@ -190,6 +200,7 @@ export default function ExpensesPage() {
 
   // Apply filters
   const filteredEntries = entries.filter(e => {
+    if (ai.aiMode && ai.matchedIds && !ai.matchedIds.has(String(e.id))) return false;
     if (fMonth && e.month !== fMonth) return false;
     if (fYear && String(e.year) !== fYear) return false;
     if (fDept) {
@@ -553,6 +564,25 @@ export default function ExpensesPage() {
       )}
 
       {tab === "onetime" && (<>
+      {/* AI search */}
+      {entries.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <AiSearchBar
+            aiMode={ai.aiMode}
+            setAiMode={ai.setAiMode}
+            q={ai.q}
+            setQ={ai.setQ}
+            loading={ai.loading}
+            onRun={runExpensesAi}
+            clear={ai.clear}
+            placeholder="Ask anything... e.g. 'shopify expenses from March'"
+            plainPlaceholder="Use the filters below"
+            matchCount={filteredEntries.length}
+            hasMatches={!!ai.matchedIds}
+            explanation={ai.explanation}
+          />
+        </div>
+      )}
       {/* Filters + sort */}
       {entries.length > 0 && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12, padding: "10px 12px", background: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: 10 }}>

@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/Layout";
 import { Modal, FormField, HubInput, HubSelect, useToast, ToastList, EmptyState } from "@/components/ui/shared";
+import AiSearchBar from "@/components/AiSearchBar";
+import { useAiSearch } from "@/lib/useAiSearch";
 import type { RevenueEntry, Department } from "@/lib/types";
 import { formatMoney, CURRENCIES, type Currency } from "@/lib/currency";
 import { useCurrency } from "@/lib/CurrencyContext";
@@ -32,6 +34,14 @@ export default function RevenuePage() {
   const [editing, setEditing] = useState<RevenueEntry | null>(null);
   const [form, setForm]       = useState<typeof blank>({ ...blank });
   const [hov, setHov]         = useState<string | null>(null);
+  const ai = useAiSearch("revenue");
+  const runRevenueAi = () => {
+    const items = entries.map(e => ({
+      id: String(e.id),
+      text: [e.description, e.departmentName, `${e.currency} ${e.amount}`, `${e.month} ${e.year}`].filter(Boolean).join(" | "),
+    }));
+    ai.runAiSearch(items);
+  };
   // Filter & sort state
   const [fMonth, setFMonth] = useState<string>("");
   const [fYear, setFYear]   = useState<string>("");
@@ -66,6 +76,7 @@ export default function RevenuePage() {
   const years = Array.from(new Set(entries.map(e => String(e.year)))).sort((a, b) => Number(b) - Number(a));
 
   const filteredEntries = entries.filter(e => {
+    if (ai.aiMode && ai.matchedIds && !ai.matchedIds.has(String(e.id))) return false;
     if (fMonth && e.month !== fMonth) return false;
     if (fYear && String(e.year) !== fYear) return false;
     if (fDept) {
@@ -297,6 +308,26 @@ export default function RevenuePage() {
               );
             })}
           </svg>
+        </div>
+      )}
+
+      {/* AI search */}
+      {entries.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <AiSearchBar
+            aiMode={ai.aiMode}
+            setAiMode={ai.setAiMode}
+            q={ai.q}
+            setQ={ai.setQ}
+            loading={ai.loading}
+            onRun={runRevenueAi}
+            clear={ai.clear}
+            placeholder="Ask anything... e.g. 'shopify revenue this quarter'"
+            plainPlaceholder="Use the filters below"
+            matchCount={filteredEntries.length}
+            hasMatches={!!ai.matchedIds}
+            explanation={ai.explanation}
+          />
         </div>
       )}
 

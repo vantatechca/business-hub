@@ -8,6 +8,8 @@ import { GripVertical } from "lucide-react";
 import type { Metric, User, MetricAssignment } from "@/lib/types";
 import { getInitials, priorityLabel } from "@/lib/types";
 import MetricHistoryDrawer from "@/components/MetricHistoryDrawer";
+import AiSearchBar from "@/components/AiSearchBar";
+import { useAiSearch } from "@/lib/useAiSearch";
 
 const ROLE_COLORS: Record<string,string> = { owner:"var(--warning)", contributor:"var(--accent)", reviewer:"var(--violet)" };
 
@@ -67,7 +69,27 @@ export default function AssignmentsPage() {
     await load(); toast("Assignment removed", "wa");
   };
 
-  const filtered = metrics.filter(m => m.name.toLowerCase().includes(q.toLowerCase()) || (m.departmentName ?? "").toLowerCase().includes(q.toLowerCase()));
+  const ai = useAiSearch("assignments");
+  const runAssignmentsAi = () => {
+    // Assignments API returns metric_id as the id; we match metrics against
+    // the AI response by joining on the id.
+    const items = metrics.map(m => {
+      const ass = assignments.filter(a => a.metricId === m.id);
+      return {
+        id: String(m.id),
+        text: [m.name, m.departmentName, ...ass.map(a => `${a.userName} (${a.roleInMetric})`)].filter(Boolean).join(" | "),
+      };
+    });
+    ai.runAiSearch(items);
+  };
+
+  const filtered = metrics.filter(m => {
+    if (ai.aiMode && ai.matchedIds) {
+      if (!ai.matchedIds.has(String(m.id))) return false;
+      return true;
+    }
+    return m.name.toLowerCase().includes(q.toLowerCase()) || (m.departmentName ?? "").toLowerCase().includes(q.toLowerCase());
+  });
   const filterActive = !!q;
   const dragEnabled = canReorder && !filterActive;
 
@@ -109,12 +131,24 @@ export default function AssignmentsPage() {
     <AppLayout title="Metric Assignments">
       <ToastList ts={ts} />
 
-      <div style={{ display:"flex", gap:10, marginBottom:14 }}>
-        <div style={{ flex:1, display:"flex", alignItems:"center", gap:8, background:"var(--bg-card)", border:"1px solid var(--border-card)", borderRadius:8, padding:"7px 11px" }}>
-          <span style={{ color:"var(--text-muted)" }}>⌕</span>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search metrics…" style={{ border:"none", background:"transparent", outline:"none", fontSize:12, color:"var(--text-primary)", width:"100%" }}/>
+      <div style={{ marginBottom: 14 }}>
+        <AiSearchBar
+          aiMode={ai.aiMode}
+          setAiMode={ai.setAiMode}
+          q={ai.aiMode ? ai.q : q}
+          setQ={(v) => ai.aiMode ? ai.setQ(v) : setQ(v)}
+          loading={ai.loading}
+          onRun={runAssignmentsAi}
+          clear={ai.clear}
+          placeholder="Ask anything... e.g. 'metrics assigned to Jerome'"
+          plainPlaceholder="Search metrics…"
+          matchCount={filtered.length}
+          hasMatches={!!ai.matchedIds}
+          explanation={ai.explanation}
+        />
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8 }}>
+          {filtered.length} metrics · {assignments.length} assignments
         </div>
-        <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>{filtered.length} metrics · {assignments.length} assignments</span>
       </div>
 
       {loading ? (
