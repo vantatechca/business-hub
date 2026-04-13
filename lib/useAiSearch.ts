@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 /**
  * Hook that wires AI search into a list page.
@@ -19,7 +19,6 @@ import { useSearchParams, useRouter } from "next/navigation";
  */
 export function useAiSearch(targetName: string) {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [aiMode, setAiMode] = useState(false);
   const [q, setQ] = useState("");
@@ -27,19 +26,21 @@ export function useAiSearch(targetName: string) {
   const [matchedIds, setMatchedIds] = useState<Set<string> | null>(null);
   const [explanation, setExplanation] = useState("");
 
-  // On mount / URL change, pick up AI match params
+  // On mount, pick up AI match params from the URL (client-side only,
+  // avoids the useSearchParams Suspense requirement during prerender).
   useEffect(() => {
-    const aiMatch = searchParams?.get("aiMatch");
-    const aiQuery = searchParams?.get("aiQuery");
-    const aiExp = searchParams?.get("aiExplanation");
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const aiMatch = params.get("aiMatch");
+    const aiQuery = params.get("aiQuery");
+    const aiExp = params.get("aiExplanation");
     if (aiMatch) {
       setAiMode(true);
       setMatchedIds(new Set(aiMatch.split(",").filter(Boolean)));
       setQ(aiQuery || "");
       setExplanation(aiExp || "");
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams?.toString()]);
+  }, []);
 
   const runAiSearch = useCallback(async (items: Array<{ id: string; text: string }>) => {
     if (!q.trim()) { setMatchedIds(null); setExplanation(""); return; }
